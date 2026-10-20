@@ -313,9 +313,7 @@ def main() -> int:
 
     def s_animations():
         pose(4)
-        hero = shot()
-        save_png(hero, "animations.png")
-        cover = banner(hero, ui)
+        cover = banner(shot(), ui)
         save_png(cover, "banner.png")
         save_png(cover.resize((1280, 640), Image.Resampling.LANCZOS), "social-preview.png")
         pose(0)
@@ -343,17 +341,14 @@ def main() -> int:
         win.show_page(win.sprites)
         win.sprites.select(0, 0)
         settle()
-        base = shot()
-        stills, frames = [], []
+        frames = []
 
         def run(dlg):
-            stills.append(grab(dlg))
             for _ in range(6):                     # PgDn: os quadros da pose parada, um a um
                 frames.append(card(grab(dlg), ui))
                 dlg.go(1)
         on_exec(imageeditor.ImageEditor, run)
         win.sprites.edit_image()
-        save_png(with_dialog(base, stills[0]), "image-editor.png")
         save_motion(frames, [260] * len(frames), "only-pixel-editor.webp")
 
     def s_command_palette():
@@ -363,9 +358,6 @@ def main() -> int:
         frames, durations = [], []
 
         def run(dlg):
-            dlg.edit.setText("anim")
-            save_png(with_dialog(base, grab(dlg), top=0.08), "command-palette.png")
-            dlg.edit.setText("")
             for k in range(len("state 1000") + 1):
                 dlg.edit.setText("state 1000"[:k])
                 frames.append(with_dialog(base, grab(dlg), top=0.08))
@@ -377,13 +369,6 @@ def main() -> int:
         frames.append(caption(shot(), "Enter jumps to [Statedef 1000]"))
         durations.append(2600)
         save_motion(frames, durations, "only-command-palette.webp")
-
-    def s_simulator():
-        if not simulate(210):
-            raise RuntimeError("the simulation did not finish")
-        frames, durations = tick_frames()
-        save_png(frames[min(len(frames) - 1, 8)], "simulator.png")
-        save_motion(frames, durations, "simulator.webp")
 
     def s_themes():
         pose(4)
@@ -540,8 +525,8 @@ def main() -> int:
             blocks.append((f"charfactory {args[0]} kfm.def", "\n".join(lines)))
         save_png(terminal(blocks, ui), "only-cli.png")
 
-    scenes = {"animations": s_animations, "editors": s_editors, "image-editor": s_image_editor,
-              "command-palette": s_command_palette, "simulator": s_simulator, "themes": s_themes,
+    scenes = {"animations": s_animations, "editors": s_editors, "pixel-editor": s_image_editor,
+              "command-palette": s_command_palette, "themes": s_themes,
               "compare": s_compare, "timeline": s_timeline, "clsn": s_clsn, "tools": s_tools, "cli": s_cli}
     for name, fn in scenes.items():
         if not wanted or name in wanted:
