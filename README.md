@@ -43,82 +43,99 @@ finds MUGEN by itself.
 
 ## Only in Char Factory
 
-Tools you won't find in the classic character editors:
+Tools you won't find in the classic character editors.
+
+### 🎯 Frame data, and a backup running side by side
+
+<img src="docs/media/only-compare.webp" alt="Simulator running the current version of a punch next to a backup, with frame data for both" width="100%">
+
+The simulator measures startup, active and recovery frames and the advantage on hit or guard. Pick
+a backup in **Compare** and both versions play side by side with the same camera, so you see exactly
+what a change did. P2 can stand, guard (following the HitDef <code>guardflag</code>), crouch or be
+in the air, and moves can be chained into combos.
+
+### ⏱️ A timeline that edits the code
+
+<img src="docs/media/only-timeline.webp" alt="Dragging a PlaySnd on the timeline rewrites its Time trigger, and a double-click opens the controller" width="100%">
+
+Every frame, hit, sound and effect of a move on one timeline. Drag a <code>PlaySnd</code> to another
+tick and its <code>Time = N</code> trigger is rewritten and the move simulated again; double-click any
+event to jump to its controller in the code.
+
+### 🧠 Collision boxes in one click
+
+<img src="docs/media/only-clsn.webp" alt="An empty frame gets anatomical Clsn2 boxes and then an attack Clsn1 on the extended arm" width="100%">
+
+Anatomical Clsn2 (head, torso, legs) from the sprite's silhouette, the attack Clsn1 on an extended
+limb, and boxes interpolated between two key frames.
+
+### 🔎 Command palette and go to definition
+
+<img src="docs/media/only-command-palette.webp" alt="Typing state 1000 in the command palette and jumping to the state in the code" width="100%">
+
+<kbd>F1</kbd> runs any command or jumps to an animation, state, sprite or sound by number or name;
+<kbd>F12</kbd> or <kbd>Ctrl</kbd>+click opens the definition of whatever is under the cursor.
+
+### 🧰 And more
 
 <table>
   <tr>
     <td width="50%" valign="top">
-      <h4>🎯 Simulator with frame data</h4>
-      Runs a state tick by tick and reports startup, active and recovery frames and the advantage
-      on hit or guard. P2 can stand, guard (following the HitDef <code>guardflag</code>), crouch or
-      jump, moves can be chained into combos, and a backup runs side by side to compare versions.
-    </td>
-    <td width="50%" valign="top">
-      <h4>⏱️ A timeline that edits the code</h4>
-      Every frame, hit, sound and effect of a move on one timeline. Drag a <code>PlaySnd</code> to
-      another tick and its <code>Time = N</code> trigger is rewritten; double-click any event to jump
-      to its controller.
-    </td>
-  </tr>
-  <tr>
-    <td valign="top">
-      <h4>🧠 Smart collision boxes</h4>
-      Generates anatomical Clsn2 (head, torso, legs) from the sprite's silhouette, detects the
-      attack Clsn1 on an extended limb and interpolates boxes between two key frames.
-    </td>
-    <td valign="top">
+      <img src="docs/media/only-transplant.png" alt="Move transplant dialog listing what comes along with the move">
       <h4>🧬 Move transplant</h4>
       Copies a whole move from another character: follows <code>ChangeState</code>,
       <code>Helper</code> and <code>p1/p2stateno</code>, brings the animations, sprites, sounds and
-      the command, and renumbers everything so nothing collides.
+      the command, and suggests free numbers so nothing collides.
+    </td>
+    <td width="50%" valign="top">
+      <img src="docs/media/only-move-wizard.png" alt="Move wizard with the move settings and the generated CNS">
+      <h4>🪄 Move wizard</h4>
+      Design a move visually (HitDef, physics, sounds, cancels and command) and watch the CNS being
+      written as you edit; apply it to the character in one click.
     </td>
   </tr>
   <tr>
     <td valign="top">
-      <h4>🪄 Move wizard</h4>
-      Design a move visually (HitDef, physics, sounds, cancels and command) with a live preview of
-      the CNS, then apply it to the character in one click.
-    </td>
-    <td valign="top">
+      <img src="docs/media/only-sheet.png" alt="Sprite sheet slicer finding eight walking frames on a sheet">
       <h4>✂️ Sprite sheet slicer</h4>
       Detects the background, separates each frame, puts the axis on the feet and builds a single
       palette with index 0 transparent, ready to import.
     </td>
-  </tr>
-  <tr>
     <td valign="top">
+      <img src="docs/media/only-palettes12.png" alt="Twelve palettes generated from color bands, previewed in several poses">
       <h4>🎨 12 palettes by color bands</h4>
       Splits palette 1 into color bands, locks the ones that must not change (skin, outline) and
-      generates palettes 2 to 12, with a preview in several poses.
-    </td>
-    <td valign="top">
-      <h4>🔎 Command palette and go to definition</h4>
-      <kbd>F1</kbd> runs any command or jumps to an animation, state, sprite or sound;
-      <kbd>F12</kbd> or <kbd>Ctrl</kbd>+click opens the definition of what is under the cursor.
+      generates palettes 2 to 12, previewed in several poses.
     </td>
   </tr>
   <tr>
     <td valign="top">
-      <h4>🧹 Unused resources</h4>
-      Lists the sprites, animations and sounds that nothing references, so you can trim the
-      character before release.
-    </td>
-    <td valign="top">
+      <img src="docs/media/only-pixel-editor.webp" alt="Pixel editor stepping through the standing frames with PgDn">
       <h4>🖌️ Pixel editor on palette indices</h4>
-      Paint, select, outline and use onion skin right on the sprite's palette indices, and move
-      through the sprites with <kbd>PgUp</kbd>/<kbd>PgDn</kbd> without closing the editor.
+      Paint, select, outline and use onion skin right on the palette indices, and step through the
+      sprites with <kbd>PgUp</kbd>/<kbd>PgDn</kbd> without closing the editor.
+    </td>
+    <td valign="top">
+      <img src="docs/media/only-unused.png" alt="Unused resources dialog listing sprites nothing references">
+      <h4>🧹 Unused resources</h4>
+      Lists the sprites, animations and sounds that nothing references, and deletes the ones you
+      pick, so the character ships lighter.
     </td>
   </tr>
   <tr>
+    <td valign="top">
+      <img src="docs/media/only-cli.png" alt="Terminal running charfactory info and charfactory validate on Kung Fu Man">
+      <h4>⌨️ Command line</h4>
+      Validate, render, convert SFF, pack and simulate from scripts or CI with
+      <code>charfactory</code>, no window needed.
+    </td>
     <td valign="top">
       <h4>🕹️ Ikemen GO ready</h4>
       Reads and writes ZSS state files alongside CNS, and the validator understands Ikemen GO
       characters too.
-    </td>
-    <td valign="top">
-      <h4>⌨️ Command line</h4>
-      Validate, render, convert SFF, pack and simulate from scripts or CI with
-      <code>charfactory</code>, no window needed.
+      <h4>🌐 Three languages</h4>
+      The whole interface in English, Spanish and Brazilian Portuguese, chosen on the first launch
+      and changeable later in the <b>View</b> menu.
     </td>
   </tr>
 </table>

@@ -373,7 +373,7 @@ class TransplantDialog(QDialog):
                  tr("animations: {0}").format(', '.join(str(a + ao) for a in i['anims']) or '—'),
                  tr("sprite groups: {0}").format(', '.join(str(g + go) for g in i['sprite_groups']) or '—'),
                  tr("sound groups: {0}").format(', '.join(str(g + sno) for g in i['sound_groups']) or '—'),
-                 f"comandos: {', '.join(c.name for c in i['commands']) or '—'}", ""]
+                 tr("commands: {0}").format(', '.join(c.name for c in i['commands']) or '—'), ""]
         bad = {k: v for k, v in clash.items() if v}
         if bad:
             lines.append(tr("ALREADY EXIST in the current character (will be replaced):"))

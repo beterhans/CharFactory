@@ -7,6 +7,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- The move transplant summary showed "comandos" untranslated in every language.
+
 ## [0.1.0] - 2026-10-20
 
 ### Added

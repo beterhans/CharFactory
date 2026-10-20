@@ -1196,6 +1196,7 @@
  "collision box (Clsn2)": "de colisão (Clsn2)",
  "combo of <b>{0}</b> hit(s) out of {1}": "combo de <b>{0}</b> acerto(s) de {1}",
  "command \"{0}\" is not defined in the CMD": "comando \"{0}\" não definido no CMD",
+ "commands: {0}": "comandos: {0}",
  "const({0}) does not exist (nor in the character's [Constants]): Ikemen accepts it as 0": "const({0}) não existe (nem em [Constants] do personagem): o Ikemen aceita e vale 0",
  "constants file (cns) not found": "arquivo de constantes (cns) não encontrado",
  "controller '{0}' does not exist in Ikemen": "controlador '{0}' não existe no Ikemen",
