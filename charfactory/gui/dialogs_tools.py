@@ -502,7 +502,7 @@ class EntryOrganizerDialog(QDialog):
             cmds = sorted({n for ex in c.triggers().values() for e in ex
                            for n in re.findall(r'command\s*=\s*"([^"]+)"', e, re.I)})
             val = (c.section.get("value") or "").strip()
-            it = QListWidgetItem(f"{c.label or tr("(no label)")}  →  {c.type} {val}" + (f"   [{', '.join(cmds)}]" if cmds else ""))
+            it = QListWidgetItem(f"{c.label or tr('(no label)')}  →  {c.type} {val}" + (f"   [{', '.join(cmds)}]" if cmds else ""))
             it.setData(Qt.ItemDataRole.UserRole, k)
             self.list.addItem(it)
         btns = QHBoxLayout()
