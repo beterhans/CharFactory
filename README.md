@@ -12,6 +12,7 @@
 
 <p align="center">
   <b><a href="../../releases/latest">Download</a></b> ·
+  <a href="#only-in-char-factory">Only here</a> ·
   <a href="#highlights">Highlights</a> ·
   <a href="#all-features">All features</a> ·
   <a href="#command-line">Command line</a> ·
@@ -39,6 +40,88 @@
 The first launch asks for the language and the theme; both can be changed later in **View**.
 If the character lives inside your MUGEN folder, **Run in the engine** (<kbd>Ctrl</kbd>+<kbd>R</kbd>)
 finds MUGEN by itself.
+
+## Only in Char Factory
+
+Tools you won't find in the classic character editors:
+
+<table>
+  <tr>
+    <td width="50%" valign="top">
+      <h4>🎯 Simulator with frame data</h4>
+      Runs a state tick by tick and reports startup, active and recovery frames and the advantage
+      on hit or guard. P2 can stand, guard (following the HitDef <code>guardflag</code>), crouch or
+      jump, moves can be chained into combos, and a backup runs side by side to compare versions.
+    </td>
+    <td width="50%" valign="top">
+      <h4>⏱️ A timeline that edits the code</h4>
+      Every frame, hit, sound and effect of a move on one timeline. Drag a <code>PlaySnd</code> to
+      another tick and its <code>Time = N</code> trigger is rewritten; double-click any event to jump
+      to its controller.
+    </td>
+  </tr>
+  <tr>
+    <td valign="top">
+      <h4>🧠 Smart collision boxes</h4>
+      Generates anatomical Clsn2 (head, torso, legs) from the sprite's silhouette, detects the
+      attack Clsn1 on an extended limb and interpolates boxes between two key frames.
+    </td>
+    <td valign="top">
+      <h4>🧬 Move transplant</h4>
+      Copies a whole move from another character: follows <code>ChangeState</code>,
+      <code>Helper</code> and <code>p1/p2stateno</code>, brings the animations, sprites, sounds and
+      the command, and renumbers everything so nothing collides.
+    </td>
+  </tr>
+  <tr>
+    <td valign="top">
+      <h4>🪄 Move wizard</h4>
+      Design a move visually (HitDef, physics, sounds, cancels and command) with a live preview of
+      the CNS, then apply it to the character in one click.
+    </td>
+    <td valign="top">
+      <h4>✂️ Sprite sheet slicer</h4>
+      Detects the background, separates each frame, puts the axis on the feet and builds a single
+      palette with index 0 transparent, ready to import.
+    </td>
+  </tr>
+  <tr>
+    <td valign="top">
+      <h4>🎨 12 palettes by color bands</h4>
+      Splits palette 1 into color bands, locks the ones that must not change (skin, outline) and
+      generates palettes 2 to 12, with a preview in several poses.
+    </td>
+    <td valign="top">
+      <h4>🔎 Command palette and go to definition</h4>
+      <kbd>F1</kbd> runs any command or jumps to an animation, state, sprite or sound;
+      <kbd>F12</kbd> or <kbd>Ctrl</kbd>+click opens the definition of what is under the cursor.
+    </td>
+  </tr>
+  <tr>
+    <td valign="top">
+      <h4>🧹 Unused resources</h4>
+      Lists the sprites, animations and sounds that nothing references, so you can trim the
+      character before release.
+    </td>
+    <td valign="top">
+      <h4>🖌️ Pixel editor on palette indices</h4>
+      Paint, select, outline and use onion skin right on the sprite's palette indices, and move
+      through the sprites with <kbd>PgUp</kbd>/<kbd>PgDn</kbd> without closing the editor.
+    </td>
+  </tr>
+  <tr>
+    <td valign="top">
+      <h4>🕹️ Ikemen GO ready</h4>
+      Reads and writes ZSS state files alongside CNS, and the validator understands Ikemen GO
+      characters too.
+    </td>
+    <td valign="top">
+      <h4>⌨️ Command line</h4>
+      Validate, render, convert SFF, pack and simulate from scripts or CI with
+      <code>charfactory</code>, no window needed.
+    </td>
+  </tr>
+</table>
 
 ## Highlights
 
