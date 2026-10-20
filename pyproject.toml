@@ -31,9 +31,9 @@ classifiers = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/eduardovbe/char-factory"
-Issues = "https://github.com/eduardovbe/char-factory/issues"
-Changelog = "https://github.com/eduardovbe/char-factory/blob/main/CHANGELOG.md"
+Homepage = "https://github.com/eduardovbe/CharFactory"
+Issues = "https://github.com/eduardovbe/CharFactory/issues"
+Changelog = "https://github.com/eduardovbe/CharFactory/blob/main/CHANGELOG.md"
 
 [project.optional-dependencies]
 gui = ["PySide6-Essentials>=6.8"]

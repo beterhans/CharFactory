@@ -3,9 +3,9 @@
 </p>
 
 <p align="center">
-  <a href="../../releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/eduardovbe/char-factory?style=flat-square&color=a6e22e&labelColor=1e1f1a"></a>
-  <a href="../../actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/eduardovbe/char-factory/ci.yml?branch=main&style=flat-square&labelColor=1e1f1a&label=tests"></a>
-  <a href="../../releases"><img alt="Downloads" src="https://img.shields.io/github/downloads/eduardovbe/char-factory/total?style=flat-square&color=a6e22e&labelColor=1e1f1a"></a>
+  <a href="../../releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/eduardovbe/CharFactory?style=flat-square&color=a6e22e&labelColor=1e1f1a"></a>
+  <a href="../../actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/eduardovbe/CharFactory/ci.yml?branch=main&style=flat-square&labelColor=1e1f1a&label=tests"></a>
+  <a href="../../releases"><img alt="Downloads" src="https://img.shields.io/github/downloads/eduardovbe/CharFactory/total?style=flat-square&color=a6e22e&labelColor=1e1f1a"></a>
   <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-a6e22e?style=flat-square&labelColor=1e1f1a"></a>
   <img alt="Windows" src="https://img.shields.io/badge/platform-Windows-a6e22e?style=flat-square&labelColor=1e1f1a">
 </p>
@@ -245,8 +245,8 @@ charfactory --help                        # every command
 Needs Python 3.11 or newer.
 
 ```powershell
-git clone https://github.com/eduardovbe/char-factory.git
-cd char-factory
+git clone https://github.com/eduardovbe/CharFactory.git
+cd CharFactory
 python -m venv .venv
 .venv\Scripts\pip install -e ".[gui,test]"
 .venv\Scripts\charfactory-gui

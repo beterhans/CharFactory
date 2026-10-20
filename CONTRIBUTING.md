@@ -14,8 +14,8 @@ Thanks for wanting to help! Bug reports, translations, documentation and code ar
 Needs Python 3.11 or newer.
 
 ```powershell
-git clone https://github.com/eduardovbe/char-factory.git
-cd char-factory
+git clone https://github.com/eduardovbe/CharFactory.git
+cd CharFactory
 python -m venv .venv
 .venv\Scripts\pip install -e ".[gui,test]"
 .venv\Scripts\charfactory-gui
