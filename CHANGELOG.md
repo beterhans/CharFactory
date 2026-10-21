@@ -7,6 +7,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-10-20
+
 ### Added
 
 - MCP server built into the editor: Claude Code, Claude Desktop, Codex, Gemini CLI, Cursor and other
@@ -53,5 +55,6 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   tick-by-tick move simulator, stage editor, tools and the `charfactory` command line.
 - Interface in English, Spanish and Brazilian Portuguese.
 
-[Unreleased]: https://github.com/eduardovbe/CharFactory/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/eduardovbe/CharFactory/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/eduardovbe/CharFactory/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/eduardovbe/CharFactory/releases/tag/v0.1.0

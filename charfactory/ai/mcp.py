@@ -41,11 +41,8 @@ def new_token() -> str:
 
 
 def version() -> str:
-    try:
-        from importlib.metadata import version as v
-        return v("charfactory")
-    except Exception:  # noqa: BLE001  (rodando do código-fonte ou do executável)
-        return "0.1.0"
+    from .. import __version__
+    return __version__
 
 
 # ======================================================================= protocolo

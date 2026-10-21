@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "charfactory"
-version = "0.1.0"
+dynamic = ["version"]
 description = "Char Factory: M.U.G.E.N character editor (sprites, animations, sounds, states) with a simulator, a CLI and AI agents (Claude, Codex, Gemini) through MCP"
 readme = "README.md"
 license = "MIT"
@@ -44,6 +44,9 @@ charfactory = "charfactory.cli:main"
 
 [project.gui-scripts]
 charfactory-gui = "charfactory.gui.launch:main"
+
+[tool.setuptools.dynamic]
+version = { attr = "charfactory.__version__" }
 
 [tool.setuptools.packages.find]
 include = ["charfactory*"]
