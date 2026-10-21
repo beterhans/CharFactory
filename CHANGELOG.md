@@ -7,6 +7,22 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- Run in Ikemen GO: **Debug → Run in MUGEN / Run in Ikemen GO**, an Ikemen GO folder and an engine
+  choice in **Tools → Options** (Automatic runs in the engine of the folder the character is in;
+  outside one, ZSS characters go to Ikemen GO), and `charfactory run --engine ikemen`. Ikemen GO
+  loads a character outside its `chars/` by its full path, no copy needed; its console output
+  (warnings about the character) and crash log show in the Engine output panel, and a `Motif` in
+  `save/config.ini` that does not exist is reported before the match closes on it.
+
+### Fixed
+
+- Command tester (`test_command`): the `b` button was read as back, and `6 6` / `4 4` did not
+  count as a dash.
+- Validator: `ModifyExplod` and `AppendToClipboard` take the parameters of `Explod` and
+  `DisplayToClipboard`, as the MUGEN documentation says, instead of reporting each as unknown.
+
 ## [0.2.0] - 2026-10-20
 
 ### Added

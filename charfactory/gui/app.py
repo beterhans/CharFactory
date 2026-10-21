@@ -2,10 +2,13 @@
 from __future__ import annotations
 
 import datetime
+import queue
 import re
 import shutil
 import subprocess
 import sys
+import threading
+import time
 from pathlib import Path
 
 from PySide6.QtCore import QByteArray, QFileSystemWatcher, QPointF, QSize, Qt, QTimer, Signal
@@ -569,6 +572,8 @@ class MainWindow(QMainWindow):
         d = mb.addMenu(tr("&Debug"))
         self.act(d, tr("Validate character"), self.validate, "F7", "validate")
         self.act(d, tr("Run in the engine"), self.run_mugen, "Ctrl+R", "run")
+        self.act(d, tr("Run in MUGEN"), lambda: self.run_mugen("mugen"))
+        self.act(d, tr("Run in Ikemen GO"), lambda: self.run_mugen("ikemen"))
         d.addSeparator()
         d.addAction(tool["cmd_test"])
 
@@ -1481,48 +1486,70 @@ class MainWindow(QMainWindow):
         {"palfx": self.palfx, "throw": self.throw, "var_list": self.var_list,
          "offset": self.offset_viewer, "wizard": self.move_wizard}.get(name, lambda: None)()
 
-    def run_mugen(self) -> None:
+    def run_mugen(self, engine: str | None = None) -> None:
+        """Roda no motor: o das Opções (Ctrl+R) ou o pedido no menu ('mugen'/'ikemen')."""
         if not self.need_char():
             return
         c = self.ctx.char
-        if self.is_dirty() and QMessageBox.question(self, "MUGEN", tr("Save before running?")) == QMessageBox.StandardButton.Yes:
+        s = self.ctx.settings
+        if not isinstance(engine, str):           # vindo do menu, o Qt passa o 'checked' da ação
+            engine = s.get("run_engine") or "auto"
+        root, engine = runner.engine_root(c, engine, s.get("mugen_dir") or None, s.get("ikemen_dir") or None)
+        title = runner.ENGINE_NAMES[engine]
+        if engine == "mugen" and c.is_zss:
+            QMessageBox.information(self, title, tr("ZSS states only run in Ikemen GO"))
+            return
+        if self.is_dirty() and QMessageBox.question(self, title, tr("Save before running?")) == QMessageBox.StandardButton.Yes:
             self.save()
         from ..tools import charkit
-        root = Path(self.ctx.settings.get("mugen_dir") or (c.mugen_root or ""))
         try:
-            exe = charkit.find_mugen_exe(root)
+            exe, engine = runner.engine_exe(root or "")
         except (FileNotFoundError, OSError):
-            QMessageBox.information(self, "MUGEN", tr("Set the MUGEN folder in Tools › Options."))
+            QMessageBox.information(self, title, tr("Set the Ikemen GO folder in Tools › Options.") if engine == "ikemen"
+                                    else tr("Set the MUGEN folder in Tools › Options."))
             return
+        title = runner.ENGINE_NAMES[engine]
         try:
-            arg = runner.char_argument(c, root)
+            arg = runner.char_argument(c, root, engine)
         except ValueError:
-            # fora de chars/: o MUGEN não carrega; instala uma cópia em chars/<pasta>
-            if QMessageBox.question(self, "MUGEN", tr("The character is outside {0}.\nInstall a copy there and run it?").format(root / 'chars')) != QMessageBox.StandardButton.Yes:
+            # fora de chars/: o motor não carrega; instala uma cópia em chars/<pasta>
+            if QMessageBox.question(self, title, tr("The character is outside {0}.\nInstall a copy there and run it?").format(root / 'chars')) != QMessageBox.StandardButton.Yes:
                 return
             r = charkit.install(c.dir, root)
             arg = f"{Path(r['installed']).name}/{c.def_path.name}"
-        s = self.ctx.settings
-        p2 = s.get("run_p2") or arg
-        args = [str(exe), arg, p2]
-        stage = s.get("run_stage") or charkit.default_stage(root)
-        if stage:
-            args += ["-s", stage]
-        if s.get("run_p2_ai"):
-            args += ["-p2.ai", str(s["run_p2_ai"])]
-        proc = subprocess.Popen(args, cwd=root)
+        args = runner.engine_args(exe, arg, s.get("run_p2") or None, s.get("run_stage") or charkit.default_stage(root),
+                                  p2_ai=s.get("run_p2_ai") or None)
+        problem = runner.config_problem(root, engine)
+        if problem:
+            self.engine_out.appendPlainText(f"[{datetime.datetime.now():%H:%M:%S}] ⚠ {problem}")
+        started = time.time()
+        # a saída do console do motor (o Ikemen avisa ali dos parâmetros e sons do personagem)
+        # vai para o painel, sem abrir uma janela de console
+        proc = subprocess.Popen(args, cwd=root, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                stdin=subprocess.DEVNULL, encoding="utf-8", errors="replace",
+                                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        lines: queue.SimpleQueue = queue.SimpleQueue()
+        reader = threading.Thread(target=lambda: [lines.put(ln.rstrip()) for ln in proc.stdout], daemon=True)
+        reader.start()
         self.engine_out.appendPlainText(f"[{datetime.datetime.now():%H:%M:%S}] {exe.name} {' '.join(args[1:])}  (pid {proc.pid})")
         self.show_bottom(2)
 
+        def drain():
+            while not lines.empty():
+                self.engine_out.appendPlainText(lines.get())
+
         def check():
+            drain()
             code = proc.poll()
             if code is None:
                 QTimer.singleShot(1000, check)
                 return
-            self.engine_out.appendPlainText(tr("[{0:%H:%M:%S}] MUGEN closed (code {1})").format(datetime.datetime.now(), code))
-            log = root / "mugen.log"
-            if log.exists() and log.stat().st_size:
-                self.engine_out.appendPlainText(log.read_text("cp1252", errors="replace")[-4000:])
+            reader.join(1)
+            drain()
+            self.engine_out.appendPlainText(tr("[{0:%H:%M:%S}] {1} closed (code {2})").format(datetime.datetime.now(), title, code))
+            log = runner.engine_log(root, engine, started - 1)
+            if log:
+                self.engine_out.appendPlainText(log)
         QTimer.singleShot(1000, check)
 
     def sheet(self) -> None:

@@ -62,7 +62,7 @@ def test_open_and_all_themes(gui):
     app, ctx, win, _ = gui
     assert ctx.char.name == "Kung Fu Man"
     assert win.sprites.nav.count == 281
-    assert win.anims.nav.count == 117
+    assert win.anims.nav.count == len(ctx.char.anims.actions)   # 117 no kfm do 1.0, 118 no do 1.1
     for name in list(ctx.themes):
         ctx.set_theme(name)
         for page in win.pages:
@@ -1106,3 +1106,44 @@ def test_palettes12_dialog_generates_and_writes(gui, monkeypatch):
     i = dlg.rngs[free]["indices"][0]
     assert s.palettes[s.find_palette(1, 4)].colors[i] == tuple(dlg.colors(4)[i])
     assert ctx.undo()                                           # Ctrl+Z volta as paletas
+
+
+def test_run_in_mugen_or_ikemen_from_the_debug_menu(gui, monkeypatch):
+    """Depurar › Rodar no MUGEN / no Ikemen GO: o executável certo, o kfm pelo caminho que cada
+    motor aceita e a saída do console do Ikemen no painel do motor."""
+    import time
+    from PySide6.QtWidgets import QMessageBox
+    from charfactory.gui import app as app_mod
+    app, ctx, win, work = gui
+    root = work.parent.parent
+    (root / "mugen.exe").write_bytes(b"")
+    ikemen = root / "ikemen"
+    (ikemen / "chars").mkdir(parents=True)
+    (ikemen / "data").mkdir()
+    (ikemen / "Ikemen_GO.exe").write_bytes(b"")
+    ctx.settings["ikemen_dir"] = str(ikemen)
+    calls = []
+
+    class FakeProc:
+        pid = 42
+
+        def __init__(self, args, **kw):
+            calls.append((args, kw))
+            self.stdout = iter(["WARNING: Kung Fu Man's state 1027: Unknown parameter(s): x, y\n"])
+
+        def poll(self):
+            return 0
+    monkeypatch.setattr(app_mod.subprocess, "Popen", FakeProc)
+    monkeypatch.setattr(QMessageBox, "question", staticmethod(lambda *a, **k: QMessageBox.StandardButton.No))
+    names = {a.text().replace("&", ""): a for m in win.menuBar().actions() if m.menu() for a in m.menu().actions()}
+    names["Run in Ikemen GO"].trigger()
+    names["Run in MUGEN"].trigger()
+    until = time.time() + 5
+    while time.time() < until and win.engine_out.toPlainText().count("closed") < 2:
+        app.processEvents()
+    (ik_args, ik_kw), (mu_args, _) = calls
+    assert ik_args[0] == str(ikemen / "Ikemen_GO.exe") and ik_args[1] == (work / "kfm.def").as_posix()
+    assert ik_kw["cwd"] == ikemen
+    assert mu_args[0] == str(root / "mugen.exe") and mu_args[1] == "kfm/kfm.def"
+    out = win.engine_out.toPlainText()
+    assert "Unknown parameter(s): x, y" in out and "Ikemen GO closed" in out and "MUGEN closed" in out

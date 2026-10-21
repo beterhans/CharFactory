@@ -1059,10 +1059,19 @@ class SettingsDialog(QDialog):
         self.mugen = QLineEdit(ctx.settings.get("mugen_dir", ""))
         b = QPushButton("…")
         b.clicked.connect(lambda: self.mugen.setText(QFileDialog.getExistingDirectory(self, tr("MUGEN folder")) or self.mugen.text()))
+        self.ikemen = QLineEdit(ctx.settings.get("ikemen_dir", ""))
+        self.ikemen.setPlaceholderText(tr("folder with Ikemen_GO.exe"))
+        b5 = QPushButton("…")
+        b5.clicked.connect(lambda: self.ikemen.setText(QFileDialog.getExistingDirectory(self, tr("Ikemen GO folder")) or self.ikemen.text()))
         self.presets = QLineEdit(ctx.settings.get("presets_dir", ""))
         b2 = QPushButton("…")
         b2.clicked.connect(lambda: self.presets.setText(QFileDialog.getExistingDirectory(self, tr("Presets folder")) or self.presets.text()))
         s = ctx.settings
+        self.engine = QComboBox()
+        self.engine.addItem(tr("Automatic"), "auto")
+        self.engine.addItem("MUGEN", "mugen")
+        self.engine.addItem("Ikemen GO", "ikemen")
+        self.engine.setCurrentIndex(max(0, self.engine.findData(s.get("run_engine") or "auto")))
         self.p2 = QLineEdit(s.get("run_p2", ""))
         self.p2.setPlaceholderText(tr("empty = the character itself (e.g. kfm)"))
         self.stage = QLineEdit(s.get("run_stage", ""))
@@ -1125,7 +1134,7 @@ class SettingsDialog(QDialog):
                 else:
                     f.addRow(r)
             return g
-        for btn in (b, b2, b3, b4):
+        for btn in (b, b2, b3, b4, b5):
             btn.setText(tr("Browse…"))
         lay = QVBoxLayout(self)
         lay.setContentsMargins(20, 16, 20, 16)
@@ -1134,11 +1143,14 @@ class SettingsDialog(QDialog):
             (tr("Language"), self.language), tr("The new language is used when the program opens again.")]))
         lay.addWidget(group(tr("Folders and programs"), [
             (tr("MUGEN"), SheetDialog._pair(self.mugen, b)),
+            ("Ikemen GO", SheetDialog._pair(self.ikemen, b5)),
             (tr("Presets"), SheetDialog._pair(self.presets, b2)),
             tr("Optional: PalFX presets (common/engines/mugen/palFX) and colorsets (common/colorsets) come from there."),
             (tr("Image editor"), SheetDialog._pair(self.image_editor, b3)),
             ("ffmpeg", SheetDialog._pair(self.ffmpeg, b4))]))
         lay.addWidget(group(tr("Run in the engine (Ctrl+R)"), [
+            (tr("Engine"), self.engine),
+            tr("Automatic: the engine of the folder the character is in; outside one, ZSS characters run in Ikemen GO and the others in MUGEN. Debug › Run in MUGEN / Run in Ikemen GO pick one for a single run."),
             (tr("Opponent (P2)"), self.p2), (tr("Stage"), self.stage), (tr("P2 AI"), self.p2_ai)]))
         lay.addWidget(group(tr("Editing"), [
             (tr("Automatic backup"), self.autosave), (tr("Undo limit"), self.undo_limit), self.watch]))
@@ -1150,6 +1162,8 @@ class SettingsDialog(QDialog):
     def save(self) -> None:
         s = self.ctx.settings
         s["mugen_dir"] = self.mugen.text().strip()
+        s["ikemen_dir"] = self.ikemen.text().strip()
+        s["run_engine"] = self.engine.currentData()
         s["presets_dir"] = self.presets.text().strip()
         s["run_p2"] = self.p2.text().strip()
         s["run_stage"] = self.stage.text().strip()

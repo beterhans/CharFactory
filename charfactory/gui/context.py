@@ -22,7 +22,7 @@ def config_path() -> Path:
 
 
 class Settings(dict):
-    DEFAULTS = {"theme": "Default", "mugen_dir": "", "recent": [], "geometry": None,
+    DEFAULTS = {"theme": "Default", "mugen_dir": "", "ikemen_dir": "", "run_engine": "auto", "recent": [], "geometry": None,
                 "onion": True, "zoom": 2, "autosave_min": 5, "file_watcher": True,
                 "undo_limit": 100, "snippets": {}}
 

@@ -7,7 +7,7 @@
   charfactory movelist <char.def> <saida.html>
   charfactory convert-sff <entrada.sff> <saida.sff> --version 1|2
   charfactory new <pasta> <nome> [--template outro.def]
-  charfactory run <char.def> [--p2 kfm] [--stage stage0]
+  charfactory run <char.def> [--p2 kfm] [--stage stage0] [--engine auto|mugen|ikemen]
   charfactory extract <arquivo.zip|rar|7z> [--dest pasta]   extrai um personagem compactado
   charfactory pack <char.def> <saida.zip>                   empacota a pasta do personagem
   charfactory unused <char.def>                             sprites, animações e sons sem uso
@@ -49,6 +49,7 @@ def main(argv: list[str] | None = None) -> int:
     s = sub.add_parser("new"); s.add_argument("dir"); s.add_argument("name")
     s.add_argument("--template"); s.add_argument("--author", default="")
     s = sub.add_parser("run"); s.add_argument("char"); s.add_argument("--p2"); s.add_argument("--stage")
+    s.add_argument("--engine", choices=runner.ENGINES, default="auto")
     s = sub.add_parser("extract"); s.add_argument("archive"); s.add_argument("--dest")
     s.add_argument("--overwrite", action="store_true")
     s = sub.add_parser("pack"); s.add_argument("char"); s.add_argument("out")
@@ -121,7 +122,7 @@ def main(argv: list[str] | None = None) -> int:
                              scale=a.scale).save(a.out)
         print(f"{a.out}  (pos = {a.x}, {a.y})")
     elif a.cmd == "run":
-        show(runner.run(c, a.p2, a.stage))
+        show(runner.run(c, a.p2, a.stage, engine=a.engine))
     elif a.cmd == "sim":
         _sim(c, a)
     elif a.cmd == "view":

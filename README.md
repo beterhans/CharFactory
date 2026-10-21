@@ -33,8 +33,9 @@
 2. Extract it anywhere and open **`Char Factory.exe`**. Nothing to install.
 3. Open a character's `.def`, or drop a `.def`, `.zip`, `.rar` or `.7z` on the window.
 
-The first launch asks for the language and the theme. If the character lives inside your MUGEN
-folder, **Run in the engine** (<kbd>Ctrl</kbd>+<kbd>R</kbd>) finds MUGEN by itself.
+The first launch asks for the language and the theme. If the character lives inside your MUGEN or
+Ikemen GO folder, **Run in the engine** (<kbd>Ctrl</kbd>+<kbd>R</kbd>) finds that engine by itself;
+**Debug → Run in MUGEN / Run in Ikemen GO** tests the same character in the other one.
 
 ## AI agents and MCP
 
@@ -308,6 +309,7 @@ Everything the editor does to files also works from scripts or CI, no window nee
 charfactory render kfm.def 200 out.gif    # render an animation
 charfactory sim kfm.def 210 --gif         # simulate a state tick by tick
 charfactory convert-sff in.sff out.sff --version 1
+charfactory run kfm.def --engine ikemen    # a quick match in Ikemen GO (or mugen, or auto)
 charfactory mcp kfm.def                   # MCP server over stdio, for agents (no window needed)
 charfactory --help                        # every command
 ```
