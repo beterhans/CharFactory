@@ -81,12 +81,15 @@ def build(mugen: Path) -> dict:
             "deprecated": "deprecated" in title.lower() or "deprecated" in _text(body)[:200].lower(),
         }
 
-    # "Like ChangeState…": herda os parâmetros do controller citado
+    # "Like ChangeState…", "This is the same as DisplayToClipboard…": herda os parâmetros do
+    # controller citado; ModifyExplod ("Syntax is basically the same as Explod") só muda os que
+    # vierem, então não herda os obrigatórios
     for c in controllers.values():
-        m = re.match(r"(?:Like|Same as|Identical to)\s+(\w+)", c["description"], re.I)
+        m = re.search(r"\b(?:Like|Same as|Identical to)\s+(\w+)", c["description"], re.I)
         base = controllers.get(m[1].lower()) if m else None
         if base and not c["params"]:
-            c["params"], c["required"] = dict(base["params"]), list(base["required"])
+            c["params"] = dict(base["params"])
+            c["required"] = [] if c["name"].lower().startswith("modify") else list(base["required"])
             c["inherits"] = base["name"]
 
     trig_doc = (mugen / "docs" / "trigger.html").read_text("utf-8", errors="replace")

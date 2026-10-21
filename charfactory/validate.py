@@ -29,6 +29,7 @@ _KEYWORDS = {"x", "y", "z", "single", "simul", "turns", "tag", "and", "or", "not
 # Aliases antigos que o MUGEN aceita (e o próprio KFM usa), ausentes da documentação 1.0
 _LEGACY_PARAMS = {"explod": {"velocity", "angle", "yangle", "xangle", "space"}, "playsnd": {"volume"}, "posfreeze": {"x", "y"},
                   "projectile": {"velocity"}}
+_LEGACY_PARAMS["modifyexplod"] = _LEGACY_PARAMS["explod"]
 _FREEFORM = {"null"}  # controllers que ignoram parâmetros
 # obrigatórios que o MUGEN tolera na prática (ex.: HitOverride com time=0 para limpar o slot)
 _TOLERATED_MISSING = {("hitoverride", "stateno")}

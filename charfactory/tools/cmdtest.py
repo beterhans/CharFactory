@@ -53,10 +53,12 @@ def parse_input(text: str) -> list[Tick]:
                 continue
             if p in NUMPAD:
                 direction = NUMPAD[p]
-            elif p.upper() in DIRS:
-                direction = p.upper()
+            elif p in DIRS:                       # como no .cmd: B maiúsculo é trás, b é o botão
+                direction = p
             elif p.lower() in BUTTONS:
                 buttons.add(p.lower())
+            elif p.upper() in DIRS:
+                direction = p.upper()
             else:
                 raise ValueError(tr("unknown input '{0}'").format(p))
         if release:
@@ -65,6 +67,10 @@ def parse_input(text: str) -> list[Tick]:
             last_dir = ticks[-1].direction if ticks else ""
             ticks.extend(Tick(direction or last_dir, frozenset(held_buttons)) for _ in range(n))
             continue
+        prev = ticks[-1] if ticks else None
+        if prev and ((direction and direction == prev.direction) or buttons & prev.buttons):
+            # o mesmo passo de novo é outro toque (6 6 = dash): solta um tick entre os dois
+            ticks.append(Tick("" if direction == prev.direction else prev.direction, prev.buttons - buttons))
         held = set(buttons) if n > 1 else set()
         ticks.extend(Tick(direction, frozenset(buttons | (held if k else set()))) for k in range(n))
         held_buttons = held

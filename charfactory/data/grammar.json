@@ -188,10 +188,22 @@
    "alternate_var_syntax": false,
    "name": "AppendToClipboard",
    "description": "This is the same as DisplayToClipboard, except that message text is added on a new line, instead of overwriting whatever text is already on the clipboard. See DisplayToClipboard for a format description.",
-   "required": [],
+   "required": [
+    "text"
+   ],
    "required_any": [],
-   "params": {},
-   "deprecated": false
+   "params": {
+    "text": {
+     "type": "",
+     "syntax": "text = \"format_string\""
+    },
+    "params": {
+     "type": "",
+     "syntax": "params = exp_1, exp_2, exp_3, exp_4, exp_5, exp_6"
+    }
+   },
+   "deprecated": false,
+   "inherits": "DisplayToClipboard"
   },
   "assertspecial": {
    "required_one_of_variants": false,
@@ -1355,8 +1367,98 @@
    "description": "Modifies the parameters of an existing Explod. Syntax is basically\nthe same as Explod. However, this controller is subject to future\nchange. Any code relying on this controller is not guaranteed to\nwork in the future.",
    "required": [],
    "required_any": [],
-   "params": {},
-   "deprecated": false
+   "params": {
+    "anim": {
+     "type": "int",
+     "syntax": "anim = [F]anim_no (int)"
+    },
+    "id": {
+     "type": "int",
+     "syntax": "ID = id_no (int)"
+    },
+    "pos": {
+     "type": "int, int",
+     "syntax": "pos = off_x, off_y (int, int)"
+    },
+    "postype": {
+     "type": "string",
+     "syntax": "postype = postype_string (string)"
+    },
+    "facing": {
+     "type": "int",
+     "syntax": "facing = facing (int)"
+    },
+    "vfacing": {
+     "type": "int",
+     "syntax": "vfacing = vfacing (int)"
+    },
+    "bindtime": {
+     "type": "int",
+     "syntax": "bindtime = bind_time (int)"
+    },
+    "vel": {
+     "type": "float, float",
+     "syntax": "vel = x_vel, y_vel (float, float)"
+    },
+    "accel": {
+     "type": "float, float",
+     "syntax": "accel = x_accel, y_accel (float, float)"
+    },
+    "random": {
+     "type": "int, int",
+     "syntax": "random = rand_x, rand_y (int, int)"
+    },
+    "removetime": {
+     "type": "int",
+     "syntax": "removetime = rem_time (int)"
+    },
+    "supermove": {
+     "type": "boolean",
+     "syntax": "supermove = bvalue (boolean)"
+    },
+    "supermovetime": {
+     "type": "int",
+     "syntax": "supermovetime = move_time (int)"
+    },
+    "pausemovetime": {
+     "type": "int",
+     "syntax": "pausemovetime = move_time (int)"
+    },
+    "scale": {
+     "type": "float, float",
+     "syntax": "scale = x_scale, y_scale (float, float)"
+    },
+    "sprpriority": {
+     "type": "int",
+     "syntax": "sprpriority = pr (int)"
+    },
+    "ontop": {
+     "type": "boolean",
+     "syntax": "ontop = bvalue (boolean)"
+    },
+    "shadow": {
+     "type": "int, int, int",
+     "syntax": "shadow = shad_r, shad_g, shad_b (int, int, int)"
+    },
+    "ownpal": {
+     "type": "boolean",
+     "syntax": "ownpal = bvalue (boolean)"
+    },
+    "removeongethit": {
+     "type": "boolean",
+     "syntax": "removeongethit = bvalue (boolean)"
+    },
+    "ignorehitpause": {
+     "type": "boolean",
+     "syntax": "ignorehitpause = bvalue (boolean)"
+    },
+    "trans": {
+     "type": "string",
+     "syntax": "trans = trans_type (string)"
+    }
+   },
+   "deprecated": false,
+   "inherits": "Explod"
   },
   "movehitreset": {
    "required_one_of_variants": false,

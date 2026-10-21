@@ -38,6 +38,15 @@ def test_warnings():
     assert any("'Tiem'" in m for m in w) and any("'foo'" in m for m in w)
 
 
+def test_controllers_documented_as_same_as_another_take_its_parameters():
+    """ModifyExplod ("Syntax is basically the same as Explod") e AppendToClipboard ("This is the
+    same as DisplayToClipboard") aceitam os parâmetros do outro; ModifyExplod não exige o anim."""
+    text = ("[Statedef 200]\n\n[State 200, m]\ntype = ModifyExplod\ntrigger1 = 1\nid = 5\nscale = 2, 2\n"
+            "\n[State 200, c]\ntype = AppendToClipboard\ntrigger1 = 1\ntext = \"%d\"\nparams = var(1)\n")
+    assert _msgs(text) == [] and _msgs(text, "warning") == []
+    assert any("'text'" in m for m in _msgs("[Statedef 200]\n\n[State 200, c]\ntype = AppendToClipboard\ntrigger1 = 1\n"))
+
+
 def test_var_syntax_and_intervals_accepted():
     text = ("[Statedef 200]\n\n[State 200, v]\ntype = VarSet\ntrigger1 = StateNo != [200,210)\n"
             "var(3) = 1\n")
