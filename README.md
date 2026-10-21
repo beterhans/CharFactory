@@ -1,22 +1,24 @@
 <p align="center">
-  <img src="docs/media/banner.png" alt="Char Factory: M.U.G.E.N character editor" width="100%">
+  <img src="docs/media/banner.png" alt="Char Factory: M.U.G.E.N character editor with AI agents through MCP" width="100%">
 </p>
 
 <p align="center">
   <a href="../../releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/eduardovbe/CharFactory?style=flat-square&color=a6e22e&labelColor=1e1f1a"></a>
   <a href="../../actions/workflows/ci.yml"><img alt="Tests" src="https://img.shields.io/github/actions/workflow/status/eduardovbe/CharFactory/ci.yml?branch=main&style=flat-square&labelColor=1e1f1a&label=tests"></a>
   <a href="../../releases"><img alt="Downloads" src="https://img.shields.io/github/downloads/eduardovbe/CharFactory/total?style=flat-square&color=a6e22e&labelColor=1e1f1a"></a>
+  <a href="#ai-agents-and-mcp"><img alt="AI agents through MCP" src="https://img.shields.io/badge/AI-Claude%20%C2%B7%20Codex%20%C2%B7%20Gemini%20via%20MCP-a6e22e?style=flat-square&labelColor=1e1f1a"></a>
   <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-a6e22e?style=flat-square&labelColor=1e1f1a"></a>
 </p>
 
 <p align="center">
   A free, open source editor for <b>M.U.G.E.N</b> and <b>Ikemen GO</b> characters.<br>
-  Sprites, animations, collision boxes, sounds and code in one window, plus a simulator<br>
-  that plays your moves tick by tick without opening the engine.
+  Sprites, animations, collision boxes, sounds and code in one window, a simulator that plays<br>
+  your moves tick by tick, and <b>AI agents</b> (Claude, Codex, Gemini) that edit the character with you.
 </p>
 
 <p align="center">
   <b><a href="../../releases/latest">Download for Windows</a></b> ·
+  <a href="#ai-agents-and-mcp">AI and MCP</a> ·
   <a href="#what-makes-it-different">What makes it different</a> ·
   <a href="#the-editors">The editors</a> ·
   <a href="#command-line">Command line</a> ·
@@ -33,6 +35,129 @@
 
 The first launch asks for the language and the theme. If the character lives inside your MUGEN
 folder, **Run in the engine** (<kbd>Ctrl</kbd>+<kbd>R</kbd>) finds MUGEN by itself.
+
+## AI agents and MCP
+
+<img src="docs/media/ai-assistant.webp" alt="The assistant reads move 200, looks at its animation, shortens two frames, raises the damage and confirms in the simulator that it still hits" width="100%">
+
+Ask for a move in plain words and an AI agent builds it in the open character: it reads the states,
+**looks at the animations** to pick the right poses, writes the code, fits the collision boxes and
+**runs the move in the simulator** to confirm it hits before telling you it is done. Every change
+shows up in the editor at once, <kbd>Ctrl</kbd>+<kbd>Z</kbd> undoes it, and nothing is written to disk
+until you save.
+
+<table>
+  <tr>
+    <td width="50%" valign="top">
+      <b>Built-in assistant</b> · <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>A</kbd><br><br>
+      A side panel that talks to <b>Claude</b>, <b>OpenAI</b> (GPT) or <b>Gemini</b> with your API key,
+      or to a local model through Ollama or LM Studio. It knows what you are looking at (the
+      statedef under the cursor, the animation and frame), so <i>"make this faster"</i> just works.
+    </td>
+    <td width="50%" valign="top">
+      <b>Your own agent through MCP</b><br><br>
+      <b>Claude Code</b>, <b>Codex</b>, <b>Claude Desktop</b>, <b>Gemini CLI</b>, <b>Cursor</b> or
+      <b>VS Code</b> connect to Char Factory and edit the character on screen with <b>your own
+      subscription</b>, no API key needed. Local only (<code>127.0.0.1</code>) and protected by a token.
+    </td>
+  </tr>
+</table>
+
+<img src="docs/media/ai-mcp.webp" alt="An MCP client calls get_move, edit_animation, edit_state and simulate_state, and the animation editor updates on each call" width="100%">
+
+<details>
+<summary><b>What the agent can do (35 tools)</b></summary>
+<br>
+
+| | Tools |
+|---|---|
+| **Understand a move** | `get_move` (statedef, animations, input and verdict in one call), `list_states`, `list_animations` with search, `test_command` (which state an input reaches) |
+| **See** | `view_animations` (contact sheet of candidate poses), `view_animation`, `view_sprite` |
+| **Create** | `create_move` (statedef, command and `[Statedef -1]` entry), `build_animation` (boxes fitted to each sprite), `set_state`, `add_controller`, `add_command` |
+| **Change precisely** | `edit_state` (one parameter, comments kept), `edit_animation` (frames, timing, boxes), `set_constant` |
+| **Check** | `simulate_state` (frame data and the path: where the character goes, from which side it hits), `validate_character`, `mugen_reference`, `mugen_guide` |
+
+Safety nets come built in: an existing move is never overwritten by accident, an input another move
+already uses is refused with the free ones listed, AIR boxes the parser would drop are rejected, and
+a reply cut by the output limit is never applied half-written.
+
+</details>
+
+### Set it up
+
+The fastest way: **AI → Connect an agent (MCP)**, tick **Run the MCP server**, pick your client and
+copy the configuration it shows (the URL and your token are already filled in). Keep Char Factory
+open with the character loaded while the agent works.
+
+<p align="center">
+  <img src="docs/media/ai-connect.png" alt="The Connect agents tab with the server running and the Claude Code command ready to copy" width="80%">
+</p>
+
+<details open>
+<summary><b>Claude Code</b> (uses your Claude subscription)</summary>
+<br>
+
+```powershell
+claude mcp add --transport http charfactory http://127.0.0.1:47913/mcp --header "Authorization: Bearer <your token>"
+```
+
+Then start `claude` and ask, for example: *"Open the character in Char Factory, look at the crouching
+kicks and make a new one that hits low"*. `/mcp` shows that `charfactory` is connected.
+
+Without the window, Claude Code can also run the server itself on a character:
+`claude mcp add charfactory -- "C:\path\to\Char Factory.exe" --mcp "C:\path\to\char.def"`.
+
+</details>
+
+<details>
+<summary><b>Codex</b> (uses your ChatGPT subscription)</summary>
+<br>
+
+Add to `~/.codex/config.toml`:
+
+```toml
+[mcp_servers.charfactory]
+url = "http://127.0.0.1:47913/mcp"
+http_headers = { "Authorization" = "Bearer <your token>" }
+```
+
+Then run `codex` and ask for the change. Or launch the server over stdio instead:
+`codex mcp add charfactory -- "C:\path\to\Char Factory.exe" --mcp`.
+
+</details>
+
+<details>
+<summary><b>Claude Desktop, Gemini CLI, Cursor, VS Code</b></summary>
+<br>
+
+The **Connect a client** list in the same tab has the exact snippet for each one. Claude Desktop
+starts `Char Factory.exe --mcp`, which connects to the open window (add it to
+`claude_desktop_config.json` under *Settings → Developer → Edit Config* and restart Claude). Any other
+client speaks Streamable HTTP to `http://127.0.0.1:47913/mcp` with the header
+`Authorization: Bearer <your token>`.
+
+</details>
+
+<details>
+<summary><b>Built-in assistant with an API key</b> (Claude, OpenAI or Gemini)</summary>
+<br>
+
+1. **AI → AI settings…**, tab **Assistant**.
+2. Pick the provider: **Anthropic (Claude)**, **OpenAI (GPT)**, **Google Gemini**, or
+   **OpenAI-compatible** for OpenRouter, Ollama or LM Studio (set its base URL).
+3. Paste the key (**Get a key** opens the provider's page) and press **Test connection**, which also
+   loads the models into the list. Claude defaults to `claude-opus-5-5`.
+4. Open the panel with <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>A</kbd> and ask.
+
+The key is stored in the Windows Credential Manager, never in the settings file. Without a saved
+key, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY` or `GEMINI_API_KEY` is used. With Claude, the assistant
+caches the prompt and thinks adaptively, so long editing sessions stay fast and cheap.
+
+</details>
+
+> [!TIP]
+> Tick **Ask before an AI changes the character** to approve each change, and use the step lines in
+> the panel (click one) to see exactly what the agent sent and got back.
 
 ## What makes it different
 
@@ -70,42 +195,42 @@ In the code, <kbd>F12</kbd> or <kbd>Ctrl</kbd>+click opens the definition under 
 <table>
   <tr>
     <td width="50%" valign="top">
-      <img src="docs/media/only-transplant.png" alt="Move transplant dialog listing what comes along with the move"><br>
+      <img src="docs/media/only-transplant.png" alt="Move transplant dialog listing what comes along with the move" width="100%"><br>
       <b>Move transplant</b><br>
       Copies a whole move from another character, following <code>ChangeState</code>,
       <code>Helper</code> and <code>p1/p2stateno</code>, with its animations, sprites, sounds and
       command, renumbered so nothing collides.
     </td>
     <td width="50%" valign="top">
-      <img src="docs/media/only-move-wizard.png" alt="Move wizard with the move settings and the generated CNS"><br>
+      <img src="docs/media/only-move-wizard.png" alt="Move wizard with the move settings and the generated CNS" width="100%"><br>
       <b>Move wizard</b><br>
       Design a move visually (HitDef, physics, sounds, cancels, command) and watch the CNS being
       written as you edit.
     </td>
   </tr>
   <tr>
-    <td valign="top">
-      <img src="docs/media/only-sheet.png" alt="Sprite sheet slicer finding eight walking frames on a sheet"><br>
+    <td width="50%" valign="top">
+      <img src="docs/media/only-sheet.png" alt="Sprite sheet slicer finding eight walking frames on a sheet" width="100%"><br>
       <b>Sprite sheet slicer</b><br>
       Finds the background and each frame, puts the axis on the feet and builds one palette, ready
       to import.
     </td>
-    <td valign="top">
-      <img src="docs/media/only-palettes12.png" alt="Twelve palettes generated from color bands, previewed in several poses"><br>
+    <td width="50%" valign="top">
+      <img src="docs/media/only-palettes12.png" alt="Twelve palettes generated from color bands, previewed in several poses" width="100%"><br>
       <b>12 palettes by color bands</b><br>
       Locks what must not change (skin, outline) and generates palettes 2 to 12, previewed in
       several poses.
     </td>
   </tr>
   <tr>
-    <td valign="top">
-      <img src="docs/media/only-pixel-editor.webp" alt="Pixel editor stepping through the standing frames with PgDn"><br>
+    <td width="50%" valign="top">
+      <img src="docs/media/only-pixel-editor.webp" alt="Pixel editor stepping through the standing frames with PgDn" width="100%"><br>
       <b>Pixel editor on palette indices</b><br>
       <kbd>Ctrl</kbd>+<kbd>E</kbd>: selection, magic wand, outline, onion skin, and
       <kbd>PgUp</kbd>/<kbd>PgDn</kbd> through the sprites without closing it.
     </td>
-    <td valign="top">
-      <img src="docs/media/only-unused.png" alt="Unused resources dialog listing sprites nothing references"><br>
+    <td width="50%" valign="top">
+      <img src="docs/media/only-unused.png" alt="Unused resources dialog listing sprites nothing references" width="100%"><br>
       <b>Unused resources</b><br>
       Sprites, animations and sounds that nothing references, ready to delete before release.
     </td>
@@ -122,26 +247,26 @@ timeline sized by its duration, MUGEN 1.1 scale, angle and interpolation, and GI
 <table>
   <tr>
     <td width="50%" valign="top">
-      <img src="docs/media/sprites.png" alt="Sprite editor with the palette panel"><br>
+      <img src="docs/media/sprites.png" alt="Sprite editor with the palette panel" width="100%"><br>
       <b>Sprites and palettes</b><br>
       Import, export and align sprites, edit palettes and ACT files, or open a sprite in an
       external editor such as Aseprite.
     </td>
     <td width="50%" valign="top">
-      <img src="docs/media/code.png" alt="States editor with the state tree, syntax highlighting and the controller list"><br>
+      <img src="docs/media/code.png" alt="States editor with the state tree, syntax highlighting and the controller list" width="100%"><br>
       <b>Code</b><br>
       CNS, CMD, AIR and DEF with highlighting, docs on hover, snippets and live validation; comments
       are kept when saving.
     </td>
   </tr>
   <tr>
-    <td valign="top">
-      <img src="docs/media/sounds.png" alt="Sound editor showing a waveform with a tick ruler"><br>
+    <td width="50%" valign="top">
+      <img src="docs/media/sounds.png" alt="Sound editor showing a waveform with a tick ruler" width="100%"><br>
       <b>Sounds</b><br>
       Play, cut, fade and resample on a ruler measured in game ticks; imports WAV, OGG, MP3 and FLAC.
     </td>
-    <td valign="top">
-      <img src="docs/media/themes.webp" alt="The same editor cycling through the eight built-in themes"><br>
+    <td width="50%" valign="top">
+      <img src="docs/media/themes.webp" alt="The same editor cycling through the eight built-in themes" width="100%"><br>
       <b>Themes</b><br>
       Eight built-in themes, a theme editor and <code>.xml</code> colorset import.
     </td>
@@ -150,6 +275,7 @@ timeline sized by its duration, MUGEN 1.1 scale, angle and interpolation, and GI
 
 <details>
 <summary><b>Everything else</b></summary>
+<br>
 
 - **Tools:** command tester, throw creator, PalFX editor, offset viewer, `[Statedef -1]` organizer,
   variable usage list, calculator and HTML move list export.
@@ -179,6 +305,7 @@ Everything the editor does to files also works from scripts or CI, no window nee
 charfactory render kfm.def 200 out.gif    # render an animation
 charfactory sim kfm.def 210 --gif         # simulate a state tick by tick
 charfactory convert-sff in.sff out.sff --version 1
+charfactory mcp kfm.def                   # MCP server over stdio, for agents (no window needed)
 charfactory --help                        # every command
 ```
 
@@ -203,6 +330,6 @@ follow the [Code of Conduct](CODE_OF_CONDUCT.md), and report security problems a
 
 [MIT](LICENSE). The bundled JetBrains Mono font is under the SIL Open Font License 1.1.
 
-<sub>Inspired by Fighter Factory. Independent project, not affiliated with Elecbyte or the Fighter
-Factory authors. M.U.G.E.N is a trademark of Elecbyte. The screenshots show Kung Fu Man, the sample
-character that ships with M.U.G.E.N.</sub>
+<sub>Inspired by Fighter Factory. Independent project, not affiliated with Elecbyte, the Fighter
+Factory authors, Anthropic, OpenAI or Google. M.U.G.E.N is a trademark of Elecbyte. The screenshots
+show Kung Fu Man, the sample character that ships with M.U.G.E.N.</sub>

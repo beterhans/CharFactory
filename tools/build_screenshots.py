@@ -124,15 +124,17 @@ def banner(screen: Image.Image, ui: dict) -> Image.Image:
            fill=accent)
     small = font(["segoeui.ttf", "JetBrainsMono-Regular.ttf"], 38)
     for i, line in enumerate(["Sprites, animations, Clsn boxes, sounds and code,",
-                              "plus a tick-by-tick move simulator.", "Free and open source."]):
+                              "a tick-by-tick move simulator and AI agents",
+                              "(Claude, Codex, Gemini) that edit through MCP."]):
         d.text((left + 4, 730 + i * 54), line, font=small, fill=dim)
-    chips, cx = ["SFF v1/v2", "AIR", "CNS", "CMD", "ZSS"], left
+    chips, cx = ["AI + MCP", "SFF v1/v2", "AIR", "CNS", "ZSS"], left
     chip_font = font(["seguisb.ttf", "JetBrainsMono-Medium.ttf"], 32)
-    for c in chips:
+    for k, c in enumerate(chips):               # o primeiro, a IA, cheio na cor de destaque
         tw = d.textlength(c, font=chip_font)
-        d.rounded_rectangle((cx, 940, cx + tw + 44, 1000), radius=30, fill=rgb(ui["accent_soft"]),
-                            outline=rgb(ui["accent_soft"]), width=2)
-        d.text((cx + 22 + tw / 2, 970), c, font=chip_font, fill=accent, anchor="mm")
+        d.rounded_rectangle((cx, 940, cx + tw + 44, 1000), radius=30,
+                            fill=accent if k == 0 else rgb(ui["accent_soft"]), outline=rgb(ui["accent_soft"]), width=2)
+        d.text((cx + 22 + tw / 2, 970), c, font=chip_font, fill=rgb(ui["accent_text"]) if k == 0 else accent,
+               anchor="mm")
         cx += tw + 60
     return img
 
@@ -166,21 +168,29 @@ def pointer(img: Image.Image, x: float, y: float) -> Image.Image:
     return img
 
 
-def card(dialog: Image.Image, ui: dict) -> Image.Image:
-    """Diálogo sozinho sobre um fundo da cor do tema, com sombra (para as imagens em grade)."""
+GRID_ASPECT = 16 / 10       # imagens lado a lado no README: mesma proporção, textos alinhados
+
+
+def card(dialog: Image.Image, ui: dict, aspect: float | None = None) -> Image.Image:
+    """Diálogo sozinho sobre um fundo da cor do tema, com sombra (para as imagens em grade).
+    Com `aspect`, o fundo cresce até essa proporção (largura/altura) com o diálogo no centro."""
     pad = 70
     bg = tuple(int(ui["window"][i:i + 2], 16) for i in (1, 3, 5))
     accent = tuple(int(ui["accent"][i:i + 2], 16) for i in (1, 3, 5))
-    out = Image.new("RGBA", (dialog.width + 2 * pad, dialog.height + 2 * pad), bg + (255,))
+    w, h = dialog.width + 2 * pad, dialog.height + 2 * pad
+    if aspect:
+        w, h = max(w, round(h * aspect)), max(h, round(w / aspect))
+    out = Image.new("RGBA", (w, h), bg + (255,))
     glow = Image.new("RGBA", out.size, (0, 0, 0, 0))
     ImageDraw.Draw(glow).ellipse((out.width * 0.2, out.height * 0.3, out.width * 1.1, out.height * 1.3),
                                  fill=accent + (40,))
     out.alpha_composite(glow.filter(ImageFilter.GaussianBlur(120)))
     shadow = Image.new("RGBA", out.size, (0, 0, 0, 0))
-    ImageDraw.Draw(shadow).rounded_rectangle((pad, pad + 16, pad + dialog.width, pad + dialog.height + 16),
+    x, y = (w - dialog.width) // 2, (h - dialog.height) // 2
+    ImageDraw.Draw(shadow).rounded_rectangle((x, y + 16, x + dialog.width, y + dialog.height + 16),
                                              radius=20, fill=(0, 0, 0, 160))
     out.alpha_composite(shadow.filter(ImageFilter.GaussianBlur(26)))
-    out.alpha_composite(rounded(dialog, 14), (pad, pad))
+    out.alpha_composite(rounded(dialog, 14), (x, y))
     return out
 
 
@@ -345,7 +355,7 @@ def main() -> int:
 
         def run(dlg):
             for _ in range(6):                     # PgDn: os quadros da pose parada, um a um
-                frames.append(card(grab(dlg), ui))
+                frames.append(card(grab(dlg), ui, GRID_ASPECT))
                 dlg.go(1)
         on_exec(imageeditor.ImageEditor, run)
         win.sprites.edit_image()
@@ -469,11 +479,11 @@ def main() -> int:
             dlg.state.setCurrentIndex(max(0, dlg.state.findData(1000)))
             dlg.suggest()
             dlg.path.setText(r"chars\kfm2\kfm.def")   # sem a pasta temporária na imagem
-            save_png(card(grab(dlg), ui), "only-transplant.png")
+            save_png(card(grab(dlg), ui, GRID_ASPECT), "only-transplant.png")
         on_exec(dialogs_tools.TransplantDialog, transplant)
         win.transplant_move()
 
-        on_exec(movewizard.MoveWizardDialog, lambda dlg: save_png(card(grab(dlg), ui), "only-move-wizard.png"))
+        on_exec(movewizard.MoveWizardDialog, lambda dlg: save_png(card(grab(dlg), ui, GRID_ASPECT), "only-move-wizard.png"))
         win.move_wizard(210)
 
         # folha de sprites montada com a caminhada do kfm, para o recorte achar os quadros
@@ -492,15 +502,15 @@ def main() -> int:
             dlg.path.setText(str(sheet_path))
             dlg.run_preview()
             dlg.path.setText("walk-sheet.png")
-            save_png(card(grab(dlg), ui), "only-sheet.png")
+            save_png(card(grab(dlg), ui, GRID_ASPECT), "only-sheet.png")
         on_exec(dialogs.SheetDialog, slicer)
         win.sheet()
 
-        on_exec(palettes12.PaletteSetDialog, lambda dlg: save_png(card(grab(dlg), ui), "only-palettes12.png"))
+        on_exec(palettes12.PaletteSetDialog, lambda dlg: save_png(card(grab(dlg), ui, GRID_ASPECT), "only-palettes12.png"))
         win.show_page(win.sprites)
         win.sprites.open_palettes12()
 
-        on_exec(dialogs.UnusedDialog, lambda dlg: save_png(card(grab(dlg), ui), "only-unused.png"))
+        on_exec(dialogs.UnusedDialog, lambda dlg: save_png(card(grab(dlg), ui, GRID_ASPECT), "only-unused.png"))
         win.unused_resources()
 
     def s_cli():
@@ -525,9 +535,205 @@ def main() -> int:
             blocks.append((f"charfactory {args[0]} kfm.def", "\n".join(lines)))
         save_png(terminal(blocks, ui), "only-cli.png")
 
+    # ------------------------------------------------------------------ IA
+
+    def s_ai():
+        """O assistente: o pedido digitado, cada passo (as ferramentas de verdade, no kfm) e a
+        resposta. Nenhum provedor é chamado: os passos são feitos aqui, como o modelo os pediria."""
+        import json
+        from charfactory.ai import keys as ai_keys
+        from charfactory.ai.providers import Call
+        ai_keys.get = lambda name: "demo"
+        ctx.settings.update(ai_provider="anthropic", ai_model_anthropic="claude-opus-5-5")
+        pose(0, 200)
+        win.toggle_assistant(True)
+        p, host = win.assistant, win.ai_host
+        host.turn_parts.clear()
+        p.refresh()
+        frames, durations = [], []
+
+        def snap(ms: int) -> None:
+            p._refresh_context()
+            frames.append(shot())
+            durations.append(ms)
+
+        def step(name: str, args: dict, ms: int = 700):
+            call = Call(str(len(p._steps)), name, args)
+            p.on_event("tool", call)
+            p._tick()
+            snap(380)
+            res = host.call(name, args)
+            p.on_event("result", (call, res))
+            p._tick()
+            snap(ms)
+            return res
+
+        snap(1500)
+        ask = "Make the light punch faster and make it hit harder"
+        for k in range(0, len(ask), 3):
+            p.input.setPlainText(ask[:k])
+            snap(55)
+        p.input.setPlainText(ask)
+        snap(600)
+        p.input.clear()
+        p._add(("user", ask))
+        p.show_busy(True)
+        snap(900)
+        p.on_event("text", "Let me look at the move first.")
+        snap(700)
+        step("get_move", {"number": 200})
+        step("view_animation", {"number": 200}, 1100)
+        act = ctx.char.anims.get(200)
+        before = act.total_time
+        faster = [{"frame": i + 1, "time": f.time - 1} for i, f in enumerate(act.frames[:-1]) if f.time > 1][:2]
+        step("edit_animation", {"number": 200, "frames": faster})
+        hit = next(c for c in ctx.char.all_statedefs()[200][0].controllers if c.type.lower() == "hitdef")
+        old = (hit.section.get("damage") or "").split(";")[0].strip()
+        step("edit_state", {"number": 200, "target": hit.label, "set": [{"key": "damage", "value": "30, 4"}]})
+        sim = json.loads(step("simulate_state", {"number": 200}).text)
+        adv = sim.get("advantage")
+        p.on_event("text", (f"Done:\n\n- **Animation 200**: {before} → {ctx.char.anims.get(200).total_time} ticks "
+                            f"({len(faster)} frames shortened)\n- **State 200**: damage `{old}` → `30, 4`\n\n"
+                            f"The simulation confirms it still hits: startup {sim['startup']}"
+                            + (f", advantage {adv:+}." if isinstance(adv, (int, float)) else ".")))
+        p.on_done()
+        snap(4500)
+        save_motion(frames, durations, "ai-assistant.webp")
+        while ctx.undo():
+            pass
+        p.new_chat()
+        win.toggle_assistant(False)
+
+    def s_mcp():
+        """Um cliente MCP de verdade (pedidos HTTP ao servidor da janela) à esquerda e o editor
+        mudando junto à direita; e a aba que mostra a configuração de cada cliente."""
+        import json
+        import socket
+        import threading
+        import urllib.request
+        from charfactory.gui.aipanel import AISettingsDialog
+        ctx.settings.update(ai_mcp_enabled=True, ai_mcp_token="your-token", ai_mcp_port=47913)
+        win.mcp.apply()
+        if win.mcp.server is None:                 # a porta padrão está em uso (o app aberto)
+            with socket.socket() as sock:
+                sock.bind(("127.0.0.1", 0))
+                ctx.settings["ai_mcp_port"] = sock.getsockname()[1]
+            win.mcp.apply()
+        srv = win.mcp.server
+
+        dlg = AISettingsDialog(ctx, win.mcp, win, tab=1)
+        dlg.setAttribute(Qt.WidgetAttribute.WA_DontShowOnScreen)
+        dlg.show()
+        dlg.client.setCurrentText("Claude Code")
+        save_png(card(grab(dlg), ui, GRID_ASPECT), "ai-connect.png")
+        dlg.reject()
+
+        def rpc(method: str, params: dict | None = None) -> dict:
+            body = json.dumps({"jsonrpc": "2.0", "id": 1, "method": method, "params": params or {}}).encode()
+            req = urllib.request.Request(srv.url, body, headers={"Content-Type": "application/json",
+                                                                 "Authorization": f"Bearer {win.mcp.token()}"})
+            out: list = []
+            t = threading.Thread(target=lambda: out.append(json.loads(urllib.request.urlopen(req, timeout=60).read())))
+            t.start()
+            while t.is_alive():                    # a ferramenta roda na thread da interface
+                settle(1)
+            return out[0]["result"]
+
+        def call(name: str, args: dict) -> dict | str:
+            text = rpc("tools/call", {"name": name, "arguments": args})["content"][0]["text"]
+            try:
+                return json.loads(text)
+            except ValueError:
+                return text
+
+        def rgb(h: str) -> tuple[int, int, int]:
+            return tuple(int(h[i:i + 2], 16) for i in (1, 3, 5))
+        f, fb = font(["JetBrainsMono-Regular.ttf"], 27), font(["JetBrainsMono-Bold.ttf"], 27)
+
+        def pane(lines: list[tuple[str, str]], w: int, h: int) -> Image.Image:
+            img = Image.new("RGBA", (w, h), rgb(ui["panel"]) + (255,))
+            d = ImageDraw.Draw(img)
+            d.rectangle((0, 0, w, 64), fill=rgb(ui["window"]))
+            for i, c in enumerate(((255, 95, 86), (255, 189, 46), (39, 201, 63))):
+                d.ellipse((28 + i * 34, 23, 46 + i * 34, 41), fill=c)
+            d.text((w / 2, 32), "MCP client  →  Char Factory", font=f, fill=rgb(ui["text_dim"]), anchor="mm")
+            y = 96
+            for kind, text in lines:
+                color = {"task": rgb(ui["text"]), "req": rgb(ui["accent"]), "res": rgb(ui["text_dim"]),
+                         "note": rgb(ui["warning"])}[kind]
+                prefix = {"task": "› ", "req": "→ ", "res": "← ", "note": "# "}[kind]
+                wrapped, line = [], prefix + text
+                while len(line) > 54:
+                    cut = line.rfind(" ", 0, 54)
+                    cut = cut if cut > 20 else 54
+                    wrapped.append(line[:cut])
+                    line = "   " + line[cut:].lstrip()
+                wrapped.append(line)
+                for ln in wrapped:
+                    d.text((36, y), ln, font=fb if kind in ("task", "req") else f, fill=color)
+                    y += 38
+                y += 14 if kind == "res" else 0
+            return img
+
+        def frame(lines: list[tuple[str, str]]) -> Image.Image:
+            screen = shot()
+            screen = screen.resize((1440, round(screen.height * 1440 / screen.width)), Image.Resampling.LANCZOS)
+            gap, tw = 40, 1000
+            out = Image.new("RGBA", (tw + screen.width + 3 * gap, screen.height + 2 * gap), rgb(ui["window"]) + (255,))
+            glow = Image.new("RGBA", out.size, (0, 0, 0, 0))
+            ImageDraw.Draw(glow).ellipse((out.width * 0.3, out.height * 0.2, out.width * 1.1, out.height * 1.4),
+                                         fill=rgb(ui["accent"]) + (45,))
+            out.alpha_composite(glow.filter(ImageFilter.GaussianBlur(140)))
+            out.alpha_composite(rounded(pane(lines, tw, screen.height), 18), (gap, gap))
+            out.alpha_composite(rounded(screen, 18), (tw + 2 * gap, gap))
+            return out
+
+        pose(0, 430)
+        act = ctx.char.anims.get(430)
+        lines = [("note", f"connected to {srv.url}"),
+                 ("task", "Make the crouching light kick faster and stronger")]
+        frames, durations = [frame(lines)], [1800]
+
+        def show(req: str, res: str, ms: int = 1500) -> None:
+            lines.append(("req", req))
+            frames.append(frame(lines))
+            durations.append(450)
+            lines.append(("res", res))
+            frames.append(frame(lines))
+            durations.append(ms)
+
+        init = rpc("initialize", {"protocolVersion": "2025-11-25", "capabilities": {},
+                                  "clientInfo": {"name": "demo", "version": "1"}})
+        count = len(rpc("tools/list")["tools"])
+        show("initialize", f"{init['serverInfo']['title']} {init['serverInfo']['version']} · {count} tools", 1000)
+        move = call("get_move", {"number": 430})
+        cmds = [c["sequence"] for e in move.get("entries", []) if isinstance(e, dict) for c in e["commands"]]
+        verdict = (move.get("simulation") or {}).get("verdict", "")
+        show('get_move {"number": 430}', f'state 430 "{ctx.char.anims.name_of(430)}" · input '
+             f'{cmds[0] if cmds else "-"} · {verdict.split(" on an opponent")[0]}')
+        before = act.total_time
+        faster = [{"frame": i + 1, "time": fr.time - 1} for i, fr in enumerate(act.frames[:-1]) if fr.time > 1][:2]
+        res = call("edit_animation", {"number": 430, "frames": faster})
+        show(f'edit_animation {{"number": 430, "frames": {json.dumps(faster)}}}',
+             f"animation 430: {before} → {res['total_time']} ticks")
+        hit = next(c for c in ctx.char.all_statedefs()[430][0].controllers if c.type.lower() == "hitdef")
+        res = call("edit_state", {"number": 430, "target": hit.label, "set": [{"key": "damage", "value": "30, 4"}]})
+        show(f'edit_state {{"number": 430, "target": "{hit.label}", "set": damage = 30, 4}}',
+             f"{res['in']} {', '.join(res['lines_now'])}")
+        sim = call("simulate_state", {"number": 430})
+        adv = sim.get("advantage")
+        show('simulate_state {"number": 430}', f"{sim['outcome']} · startup {sim['startup']}"
+             + (f" · advantage {adv:+}" if isinstance(adv, (int, float)) else ""), 4500)
+        save_motion(frames, durations, "ai-mcp.webp")
+        while ctx.undo():
+            pass
+        ctx.settings["ai_mcp_enabled"] = False
+        win.mcp.apply()
+
     scenes = {"animations": s_animations, "editors": s_editors, "pixel-editor": s_image_editor,
               "command-palette": s_command_palette, "themes": s_themes,
-              "compare": s_compare, "timeline": s_timeline, "clsn": s_clsn, "tools": s_tools, "cli": s_cli}
+              "compare": s_compare, "timeline": s_timeline, "clsn": s_clsn, "tools": s_tools, "cli": s_cli,
+              "ai": s_ai, "mcp": s_mcp}
     for name, fn in scenes.items():
         if not wanted or name in wanted:
             fn()
