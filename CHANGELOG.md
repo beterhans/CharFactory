@@ -39,6 +39,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   same button took the input first and the move never came out; it now goes right before that
   entry. Its controllers are also numbered after the statedef instead of `[State 0, …]`.
 - The move transplant summary showed "comandos" untranslated in every language.
+- The simulator's problem list showed internal Portuguese codes ("sem-acerto: …") before each
+  message; it now shows only the translated message, and the codes in the JSON output are English
+  (`no-hit`, `below-ground`, `huge-effect`, `dark-halo`, `reversed-push`).
+- The Simulator page started a jumping attack entered from the ground at the top of a jump, so it
+  missed there; it now starts on the ground, like the AI tools' simulation.
 
 ## [0.1.0] - 2026-10-20
 

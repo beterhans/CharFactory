@@ -1823,21 +1823,21 @@ def audit(sim: Sim) -> list[dict]:
             # medido: aura certa 0,7%, aura afundada 11%, rastro do dash no chão 54%, raios 1-4%
             depth = float(pts[1].max()) if pts is not None else 0.0
             if frac > 0.05 and depth > 5 and not x["on_hit"] and not kit:  # faísca de acerto pode passar do chão
-                add("abaixo-do-chao", tr("{0}: {1:.0%} of the effect below the ground (up to {2:.0f} px)").format(lab, frac, float(pts[1].max())), ("chao", lab))
+                add("below-ground", tr("{0}: {1:.0%} of the effect below the ground (up to {2:.0f} px)").format(lab, frac, float(pts[1].max())), ("chao", lab))
             if (b[3] - b[1] > 2.6 * h or b[2] - b[0] > 4.5 * h) and not kit:
                 if x["anim"] < 30000 or x["anim"] >= 35000:
-                    add("efeito-gigante", tr("{0}: {1:.0f}x{2:.0f} px (the character is {3:.0f})").format(lab, b[2]-b[0], b[3]-b[1], h), ("big", lab))
+                    add("huge-effect", tr("{0}: {1:.0f}x{2:.0f} px (the character is {3:.0f})").format(lab, b[2]-b[0], b[3]-b[1], h), ("big", lab))
             w_, h_ = b[2] - b[0], b[3] - b[1]
             round_ = max(w_, h_) < 1.8 * max(1.0, min(w_, h_))
             # na cena (cenário apagado pelo próprio char) o fundo é preto: o halo não acinzenta nada
             if x["trans"] != "sub" and not x["on_hit"] and not kit and round_ and not rec.get("nobg"):
                 area = _dim_area(sim, x)
                 if area > 2.5 * h * h:
-                    add("halo-escuro", tr("{0}: dimmed area of {1:.0f} px² ({2:.1f}x the character's height²) — added to the stage it becomes a gray disc").format(lab, area, area / (h * h)), ("halo", lab))
+                    add("dark-halo", tr("{0}: dimmed area of {1:.0f} px² ({2:.1f}x the character's height²) — added to the stage it becomes a gray disc").format(lab, area, area / (h * h)), ("halo", lab))
     # golpes que não acertam
     acts = [e for e in sim.events if e["kind"] == "acerto"]
     if not acts and not any(e["kind"] == "defesa" for e in sim.events) and any(r for r in sim.track if any(e.get("clsn1") for e in r["ents"])):
-        add("sem-acerto", tr("no hit on the dummy at {0:.0f} px").format(sim.p2.pos[0]), ("miss",))
+        add("no-hit", tr("no hit on the dummy at {0:.0f} px").format(sim.p2.pos[0]), ("miss",))
     # oponente jogado para o lado do atacante no fim
     if acts and len(sim.track) > 2:
         p1x = sim.track[-1]["ents"][0]["pos"][0] if sim.track[-1]["ents"] else 0
@@ -1852,7 +1852,7 @@ def audit(sim: Sim) -> list[dict]:
         side = at["p2"]["pos"][0] - at["ents"][0]["pos"][0]
         toward = abs(vx) >= 2 and vx * side < 0
         if toward or (abs(p2b - p2a) > 20 and abs(p2b - p1x) < abs(p2a - p1x) - 20):
-            add("empurrao-invertido", tr("the last hit pushes the opponent toward the attacker (check the sign of ground.velocity x)"), ("push",))
+            add("reversed-push", tr("the last hit pushes the opponent toward the attacker (check the sign of ground.velocity x)"), ("push",))
     return out
 
 

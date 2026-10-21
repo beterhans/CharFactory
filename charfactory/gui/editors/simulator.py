@@ -766,7 +766,8 @@ class SimulatorPage(QWidget):
             self.ab_label.setText(tr("<b>B</b> ({0}) · {1} · {2} ticks · {3} hit(s)").format(self.compare.currentText(), text, b.tick, hits))
         self.events.clear()
         for p in summ["problems"]:
-            it = QListWidgetItem(f"⚠ {p['kind']}: {p['message']}")
+            it = QListWidgetItem(f"⚠ {p['message']}")       # a mensagem já vem traduzida; o kind é para scripts
+            it.setToolTip(p["kind"])
             self.events.addItem(it)
         for ev in sim.events:
             snd = ev.get("snd")
