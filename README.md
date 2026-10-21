@@ -11,7 +11,7 @@
 </p>
 
 <p align="center">
-  A free, open source editor for <b>M.U.G.E.N</b> and <b>Ikemen GO</b> characters.<br>
+  A free, open source editor for <b>M.U.G.E.N</b> and <b>Ikemen GO</b> characters. Inspired by <a href="https://virtualltek.com/">Fighter Factory</a>.<br>
   Sprites, animations, collision boxes, sounds and code in one window, a simulator that plays<br>
   your moves tick by tick, and <b>AI agents</b> (Claude, Codex, Gemini) that edit the character with you.
 </p>
