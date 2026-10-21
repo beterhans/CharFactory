@@ -1,3 +1,3 @@
 """charfactory — biblioteca, CLI e interface (Char Factory) para personagens M.U.G.E.N."""
 
-__version__ = "0.2.0"
+__version__ = "0.2.5"

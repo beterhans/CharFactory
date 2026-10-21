@@ -7,6 +7,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.2.5] - 2026-10-21
+
 ### Added
 
 - Run in Ikemen GO: **Debug → Run in MUGEN / Run in Ikemen GO**, an Ikemen GO folder and an engine
@@ -71,6 +73,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   tick-by-tick move simulator, stage editor, tools and the `charfactory` command line.
 - Interface in English, Spanish and Brazilian Portuguese.
 
-[Unreleased]: https://github.com/eduardovbe/CharFactory/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/eduardovbe/CharFactory/compare/v0.2.5...HEAD
+[0.2.5]: https://github.com/eduardovbe/CharFactory/compare/v0.2.0...v0.2.5
 [0.2.0]: https://github.com/eduardovbe/CharFactory/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/eduardovbe/CharFactory/releases/tag/v0.1.0
