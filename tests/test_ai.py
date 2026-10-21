@@ -227,6 +227,8 @@ def test_a_move_written_by_hand_can_be_checked_by_its_path(mugen_dir, host):
     assert "Stand Light Kick" in out["input_taken_from"]
     _json(host, "set_state", number=1450, text=CROSS_UP, replace=True)
     assert _json(host, "test_command", input="a")["state"] == 1450
+    from charfactory.tools import simulate
+    assert simulate.starts_on_ground(host.char, 1450)          # a página do simulador sai do chão também
     sim = _json(host, "simulate_state", number=1450)
     assert sim["path"][0]["y"] > -20                           # sai do chão, não do alto de um pulo
     assert sim["outcome"] == "hit" and sim["crossed_opponent_at_tick"] < sim["first_hit"]["tick"]

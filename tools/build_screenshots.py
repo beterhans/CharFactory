@@ -23,6 +23,123 @@ OUT = ROOT / "docs" / "media"
 SIZE = (1440, 860)          # janela, em pixels lógicos
 MOTION_WIDTH = 1600         # largura das animações (as capturas ficam na escala da tela)
 
+# o golpe que o assistente cria na animação do README: pula chutando e emenda um combo que
+# lança o oponente (testado no simulador do kfm: 4 acertos)
+AI_AIR_STATE = """[Statedef 1500]
+type = A
+movetype = A
+physics = A
+anim = 1500
+ctrl = 0
+velset = 3.5, -6
+poweradd = 40
+juggle = 2
+facep2 = 1
+sprpriority = 2
+
+[State 1500, flying kick]
+type = HitDef
+trigger1 = AnimElem = 2
+attr = A, SA
+damage = 40, 5
+animtype = Medium
+guardflag = HA
+hitflag = MAF
+pausetime = 8, 10
+sparkxy = -10, -60
+hitsound = S5, 2
+guardsound = S6, 0
+ground.type = High
+ground.slidetime = 6
+ground.hittime = 24
+ground.velocity = -1
+air.velocity = -1, -2
+
+[State 1500, land into the combo]
+type = ChangeState
+trigger1 = vel y > 0 && pos y + vel y >= 0
+value = 1501
+"""
+
+AI_COMBO_STATE = """[Statedef 1501]
+type = S
+movetype = A
+physics = S
+anim = 1501
+ctrl = 0
+velset = 1, 0
+sprpriority = 2
+
+[State 1501, on the ground]
+type = PosSet
+trigger1 = Time = 0
+y = 0
+
+[State 1501, punch]
+type = HitDef
+trigger1 = AnimElem = 2
+attr = S, SA
+damage = 25, 3
+animtype = Light
+guardflag = MA
+pausetime = 6, 8
+sparkxy = -10, -76
+hitsound = S5, 0
+guardsound = S6, 0
+ground.type = High
+ground.slidetime = 6
+ground.hittime = 18
+ground.velocity = -1
+
+[State 1501, strong punch]
+type = HitDef
+trigger1 = AnimElem = 4
+attr = S, SA
+damage = 35, 4
+animtype = Medium
+guardflag = MA
+pausetime = 8, 10
+sparkxy = -10, -76
+hitsound = S5, 2
+guardsound = S6, 0
+ground.type = High
+ground.slidetime = 8
+ground.hittime = 20
+ground.velocity = -1.5
+
+[State 1501, launcher kick]
+type = HitDef
+trigger1 = AnimElem = 6
+attr = S, SA
+damage = 70, 8
+animtype = Hard
+guardflag = MA
+pausetime = 14, 16
+sparkno = 3
+sparkxy = -10, -70
+hitsound = S5, 4
+guardsound = S6, 0
+ground.type = High
+ground.velocity = -10, -6
+air.velocity = -10, -6
+fall = 1
+fall.recover = 0
+
+[State 1501, back to stand]
+type = ChangeState
+trigger1 = AnimTime = 0
+value = 0
+ctrl = 1
+"""
+
+AI_JUMP_KICK = [{"group": 640, "item": 0, "time": 6}, {"group": 640, "item": 1, "time": 40, "attack": True},
+             {"group": 640, "item": 2, "time": -1}]
+AI_COMBO = [{"group": 200, "item": 1, "time": 2}, {"group": 200, "item": 2, "time": 4, "attack": True},
+         {"group": 210, "item": 2, "time": 3}, {"group": 210, "item": 3, "time": 4, "attack": True},
+         {"group": 240, "item": 1, "time": 3}, {"group": 240, "item": 2, "time": 5, "attack": True},
+         {"group": 240, "item": 4, "time": 5}, {"group": 240, "item": 5, "time": 4},
+         {"group": 200, "item": 0, "time": 4}]
+
 
 def pil(pixmap) -> Image.Image:
     from PySide6.QtCore import QBuffer, QIODevice
@@ -538,66 +655,96 @@ def main() -> int:
     # ------------------------------------------------------------------ IA
 
     def s_ai():
-        """O assistente: o pedido digitado, cada passo (as ferramentas de verdade, no kfm) e a
-        resposta. Nenhum provedor é chamado: os passos são feitos aqui, como o modelo os pediria."""
+        """O assistente cria um golpe do zero: escolhe as poses, monta as animações, escreve as
+        duas fases, simula, corrige a caixa do chute que passava na frente do oponente e mostra o
+        golpe no simulador. Nenhum provedor é chamado: os passos (ferramentas de verdade, no kfm)
+        são feitos aqui, na ordem em que o modelo os pediria."""
         import json
+        import re
         from charfactory.ai import keys as ai_keys
         from charfactory.ai.providers import Call
+        from charfactory.tools import ops
         ai_keys.get = lambda name: "demo"
         ctx.settings.update(ai_provider="anthropic", ai_model_anthropic="claude-opus-5-5")
-        pose(0, 200)
+        pose(0, 640)
         win.toggle_assistant(True)
         p, host = win.assistant, win.ai_host
         host.turn_parts.clear()
         p.refresh()
         frames, durations = [], []
 
-        def snap(ms: int) -> None:
+        def snap(ms: int, text: str | None = None) -> None:
             p._refresh_context()
-            frames.append(shot())
+            img = shot()
+            frames.append(caption(img, text) if text else img)
             durations.append(ms)
 
-        def step(name: str, args: dict, ms: int = 700):
+        def step(name: str, args: dict, ms: int = 650):
             call = Call(str(len(p._steps)), name, args)
             p.on_event("tool", call)
             p._tick()
-            snap(380)
+            snap(320)
             res = host.call(name, args)
             p.on_event("result", (call, res))
             p._tick()
             snap(ms)
             return res
 
+        def say(text: str, ms: int = 1400) -> None:
+            p.on_event("text", text)
+            snap(ms)
+
         snap(1500)
-        ask = "Make the light punch faster and make it hit harder"
-        for k in range(0, len(ask), 3):
+        ask = "Create a new attack: he jumps forward kicking, then lands a combo and knocks the opponent far away"
+        for k in range(0, len(ask), 4):
             p.input.setPlainText(ask[:k])
-            snap(55)
+            snap(45)
         p.input.setPlainText(ask)
-        snap(600)
+        snap(700)
         p.input.clear()
         p._add(("user", ask))
         p.show_busy(True)
-        snap(900)
-        p.on_event("text", "Let me look at the move first.")
-        snap(700)
-        step("get_move", {"number": 200})
-        step("view_animation", {"number": 200}, 1100)
-        act = ctx.char.anims.get(200)
-        before = act.total_time
-        faster = [{"frame": i + 1, "time": f.time - 1} for i, f in enumerate(act.frames[:-1]) if f.time > 1][:2]
-        step("edit_animation", {"number": 200, "frames": faster})
-        hit = next(c for c in ctx.char.all_statedefs()[200][0].controllers if c.type.lower() == "hitdef")
-        old = (hit.section.get("damage") or "").split(";")[0].strip()
-        step("edit_state", {"number": 200, "target": hit.label, "set": [{"key": "damage", "value": "30, 4"}]})
-        sim = json.loads(step("simulate_state", {"number": 200}).text)
-        adv = sim.get("advantage")
-        p.on_event("text", (f"Done:\n\n- **Animation 200**: {before} → {ctx.char.anims.get(200).total_time} ticks "
-                            f"({len(faster)} frames shortened)\n- **State 200**: damage `{old}` → `30, 4`\n\n"
-                            f"The simulation confirms it still hits: startup {sim['startup']}"
-                            + (f", advantage {adv:+}." if isinstance(adv, (int, float)) else ".")))
+        snap(800)
+        say("I'll find the poses first.", 900)
+        step("list_animations", {"search": "kick"})
+        step("view_animations", {"numbers": [630, 640, 240, 1055]}, 1500)
+        say("640 (jump strong kick) for the jump; the punches 200 and 210 and the strong kick 240 for "
+            "the combo. Building both animations with their boxes.", 1600)
+        step("build_animation", {"number": 1500, "frames": AI_JUMP_KICK})
+        an.select_action(1500)
+        step("build_animation", {"number": 1501, "frames": AI_COMBO}, 900)
+        an.select_action(1501)
+        step("create_move", {"state": 1500, "anim": 1500, "kind": "special", "command": "~D, DB, B, b",
+                             "name": "Flying Kick Combo"})
+        step("set_state", {"number": 1500, "text": AI_AIR_STATE, "replace": True})
+        step("set_state", {"number": 1501, "text": AI_COMBO_STATE})
+        sim = json.loads(step("simulate_state", {"number": 1500}, 900).text)
+        hits = [e for e in sim["events"] if e["kind"] == "hit"]
+        say(f"The combo lands {len(hits)} hits, but the flying kick passes in front of him: its box "
+            "covers only the foot. Widening it to the whole leg.", 1800)
+        text = ops.get_action_text(ctx.char, 1500)
+        text = re.sub(r"Clsn1: 1\n Clsn1\[0\] = [^\n]+",
+                      "Clsn1: 2\n Clsn1[0] = 13, -48, 43, -33\n Clsn1[1] = 43, -44, 73, -24", text)
+        step("set_animation", {"text": text})
+        sim = json.loads(step("simulate_state", {"number": 1500}, 900).text)
+        hits = [e for e in sim["events"] if e["kind"] == "hit"]
+        say(f"Done: **Flying Kick Combo** on `D, DB, B + b`.\n\n"
+            f"- **State 1500**: jumps forward kicking (animation 1500)\n"
+            f"- **State 1501**: punch, strong punch and a launcher kick (animation 1501)\n\n"
+            f"Simulated: {len(hits)} hits, {sum(e.get('damage') or 0 for e in hits)} damage, and the last "
+            f"one knocks him far away. Here it is in the simulator.", 2600)
         p.on_done()
-        snap(4500)
+        snap(1200)
+
+        # o golpe pronto no simulador, tick a tick (a cada 2 ticks, em tempo real)
+        if simulate(1500):
+            for tick in range(0, sp.slider.maximum() + 1, 2):
+                sp.slider.setValue(tick)
+                wait(lambda: not sp._rendering and sp._key(tick) in sp.cache, 20)
+                p._refresh_context()
+                frames.append(caption(shot(), "The new move in the simulator, tick by tick"))
+                durations.append(34)
+            durations[-1] = 2600
         save_motion(frames, durations, "ai-assistant.webp")
         while ctx.undo():
             pass

@@ -704,13 +704,14 @@ class SimulatorPage(QWidget):
             # a auditoria (summary) mede efeitos sprite a sprite: segundos num golpe cheio de
             # faíscas, por isso vai junto da simulação e não na thread da interface
             sim = simulate.simulate(c, n, p2_dist=dist, max_ticks=mx, p2_pose=pose, p2_guard=guard,
-                                    chain=chain)
+                                    chain=chain, from_ground=simulate.starts_on_ground(c, n))
             box = simulate._window(sim) if sim.track else None
             simb = None
             if other:                   # A/B: a outra versão com a mesma simulação e a mesma câmera
                 from ... import project
-                simb = simulate.simulate(project.load(other, mugen), n, p2_dist=dist, max_ticks=mx,
-                                         p2_pose=pose, p2_guard=guard, chain=chain)
+                cb = project.load(other, mugen)
+                simb = simulate.simulate(cb, n, p2_dist=dist, max_ticks=mx, p2_pose=pose, p2_guard=guard,
+                                         chain=chain, from_ground=simulate.starts_on_ground(cb, n))
                 if simb.track and box:
                     bb = simulate._window(simb)
                     box = (min(box[0], bb[0]), max(box[1], bb[1]), min(box[2], bb[2]), max(box[3], bb[3]))

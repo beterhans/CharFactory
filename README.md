@@ -38,7 +38,10 @@ folder, **Run in the engine** (<kbd>Ctrl</kbd>+<kbd>R</kbd>) finds MUGEN by itse
 
 ## AI agents and MCP
 
-<img src="docs/media/ai-assistant.webp" alt="The assistant reads move 200, looks at its animation, shortens two frames, raises the damage and confirms in the simulator that it still hits" width="100%">
+<img src="docs/media/ai-assistant.webp" alt="Asked for a jumping kick that lands into a combo, the assistant picks the poses, builds two animations and two states, wires the command, simulates, widens the kick's attack box when it misses, and the finished move plays in the simulator: four hits and the opponent knocked far away" width="100%">
+
+<p align="center"><sub>One request, a new move: the assistant picks the poses, builds the animations and states, wires
+the command, fixes the kick that missed and shows the result in the simulator. Real tools on Kung Fu Man.</sub></p>
 
 Ask for a move in plain words and an AI agent builds it in the open character: it reads the states,
 **looks at the animations** to pick the right poses, writes the code, fits the collision boxes and

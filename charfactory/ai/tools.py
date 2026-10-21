@@ -1259,16 +1259,6 @@ def mugen_reference(host, name: str):
 
 # ======================================================================= simulação
 
-def _starts_on_ground(char, number: int) -> bool:
-    """Um estado aéreo que o [Statedef -1] chama do chão (statetype != A, = S): o pulo é do golpe."""
-    for ctl in _minus1_entries(char):
-        if hasattr(ctl, "triggers") and ctl.type.lower() == "changestate" and _entry_state(ctl) == number:
-            text = " ".join(e for ex in ctl.triggers().values() for e in ex).lower().replace(" ", "")
-            if "statetype!=a" in text or "statetype=s" in text or "statetype=c" in text:
-                return True
-    return False
-
-
 def _verdict(char, number: int) -> dict | None:
     """Simulação rápida de um estado de ataque, para a resposta de quem acabou de escrevê-lo: o
     modelo vê na hora se o golpe acerta, quantas vezes e de que lado, sem precisar pedir."""
@@ -1279,7 +1269,7 @@ def _verdict(char, number: int) -> dict | None:
     if (sd[0].params().get("movetype") or "").strip().upper()[:1] != "A":
         return None
     try:
-        sim = simulate.simulate(char, number, max_ticks=600, from_ground=_starts_on_ground(char, number))
+        sim = simulate.simulate(char, number, max_ticks=600, from_ground=simulate.starts_on_ground(char, number))
     except Exception:  # noqa: BLE001  (o veredito é um extra: estado quebrado aparece no validate)
         return None
     fd = simulate.frame_data(sim)
@@ -1354,7 +1344,7 @@ def simulate_state(host, char, number: int, distance: float = 50.0, picture: boo
     if number not in char.all_statedefs():
         raise ToolError(f"statedef {number} does not exist")
     sim = simulate.simulate(char, number, p2_dist=float(distance), max_ticks=900,
-                            from_ground=_starts_on_ground(char, number))
+                            from_ground=simulate.starts_on_ground(char, number))
     fd = simulate.frame_data(sim)
     events = []
     for e in sim.events:

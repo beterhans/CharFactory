@@ -1436,6 +1436,23 @@ def simulate(char, state: int, p2_dist: float = 50.0, seed: int = 7, max_ticks: 
                chain, from_ground).run()
 
 
+def starts_on_ground(char, state: int) -> bool:
+    """Um estado aéreo que o [Statedef -1] chama do chão (statetype != A, = S ou = C): o pulo é
+    parte do golpe, então a simulação sai do chão em vez do alto de um pulo."""
+    st = char.states_file_for(-1)
+    sd = st.statedefs.get(-1) if st is not None else None
+    for ctl in (sd.controllers if sd else []):
+        if not hasattr(ctl, "triggers") or ctl.type.lower() != "changestate":
+            continue
+        m = re.match(r"^\s*(-?\d+)", ctl.section.get("value") or "")
+        if not m or int(m[1]) != state:
+            continue
+        text = " ".join(e for ex in ctl.triggers().values() for e in ex).lower().replace(" ", "")
+        if "statetype!=a" in text or "statetype=s" in text or "statetype=c" in text:
+            return True
+    return False
+
+
 # pose do boneco -> anims do oponente de verdade (Clsn2 de todos os quadros, somadas)
 P2_POSE_ANIMS = {"stand": (0,), "hit": (5000, 5001, 5005), "air": (5030, 5035),
                  "fall": (5030, 5035, 5050), "down": (5110,), "crouch": (11,),
