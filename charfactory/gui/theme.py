@@ -462,6 +462,19 @@ QLabel {{ background: transparent; }}
 QLabel#dim, QLabel#fieldLabel, QLabel#counter {{ color: {u['text_dim']}; }}
 QLabel#hint {{ color: {u['text_dim']}; font-size: 8pt; }}
 QLabel#infoChip {{ color: {u['text_dim']}; background: {u['panel_alt']}; border-radius: 6px; padding: 3px 8px; }}
+QFrame#aiComposer {{ background: {u['input']}; border: 1px solid {u['border']}; border-radius: 10px; }}
+QFrame#aiComposer[focus="true"] {{ border-color: {u['accent']}; }}
+QFrame#aiComposer QPlainTextEdit {{ background: transparent; border: none; padding: 2px 2px; }}
+QLabel#aiContext {{ color: {u['text_dim']}; font-size: 8pt; }}
+QLabel#aiBusy {{ color: {u['accent']}; padding: 0 2px; }}
+QPushButton#aiChip {{ border: 1px solid {u['border']}; border-radius: 8px; padding: 7px 10px; color: {u['text']};
+                      background: {u['panel_alt']}; text-align: left; }}
+QPushButton#aiChip:hover {{ border-color: {u['accent']}; color: {u['accent']}; }}
+QFrame#aiSetup {{ background: {_mix(u['panel'], u['warning'], 0.12)}; border: 1px solid {_mix(u['border'], u['warning'], 0.45)};
+                  border-radius: 8px; }}
+QLabel#aiTitle {{ color: {u['text']}; font-size: 11pt; font-weight: 600; }}
+QPushButton[danger="true"] {{ background: {_mix(u['button'], u['error'], 0.25)}; border-color: {_mix(u['border'], u['error'], 0.6)}; }}
+QPushButton[danger="true"]:hover {{ background: {_mix(u['button'], u['error'], 0.4)}; }}
 QWidget#plain, QWidget#section, QWidget#sectionBody, QWidget#toolStrip, QWidget#tabCorner {{ background: transparent; }}
 QFrame#toolSep, QFrame#sectionRule {{ background: {u['border']}; border: none; }}
 QToolButton#sectionHeader {{ border: none; border-radius: 6px; padding: 3px 2px; color: {u['text']};

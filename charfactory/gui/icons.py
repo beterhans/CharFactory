@@ -374,6 +374,9 @@ def _draw(name: str, d: _Pen) -> None:
     elif name == "rotate":
         d.arc(12, 12, 7, 60, 280)
         _arrow_head(d, 15.5, 6, 20)
+    elif name == "reload":                  # recarregar: seta em círculo quase fechado
+        d.arc(12, 12, 7.5, 80, 300)
+        _arrow_head(d, 13.3, 4.6, 10)
     elif name == "resize":
         R(3, 9, 12, 12, 1.5)
         L((11, 13), (20, 4))
@@ -899,6 +902,17 @@ def _draw_more(name: str, d: _Pen) -> bool:
         R(3, 3, 12, 14, 2)
         _dashed(d, False)
         R(9, 7, 12, 14, 2)
+    elif name == "ai":                      # assistente de IA: brilho de quatro pontas e um menor
+        P((10, 3), (11.6, 8.4), (17, 10), (11.6, 11.6), (10, 17), (8.4, 11.6), (3, 10), (8.4, 8.4), close=True)
+        P((18, 14), (18.8, 16.2), (21, 17), (18.8, 17.8), (18, 20), (17.2, 17.8), (15, 17), (17.2, 16.2), close=True)
+    elif name == "send":                    # mandar a mensagem: aviãozinho de papel
+        P((3, 11), (21, 3), (14, 21), (11, 13), close=True)
+        L((11, 13), (21, 3))
+    elif name == "plug":                    # conectar um agente externo (MCP)
+        L((9, 3), (9, 8))
+        L((15, 3), (15, 8))
+        P((6, 8), (18, 8), (18, 12), (15, 16), (9, 16), (6, 12), close=True)
+        L((12, 16), (12, 21))
     else:
         return False
     return True

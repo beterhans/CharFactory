@@ -140,6 +140,13 @@ class States:
         self._index()
         return self.statedefs[number].controllers[-1]
 
+    def remove_controller(self, number: int, index: int) -> Controller:
+        """Tira um [State] de um statedef (pela posição, contando do 0)."""
+        c = self.statedefs[number].controllers[index]
+        self.doc.sections[:] = [x for x in self.doc.sections if x is not c.section]
+        self._index()
+        return c
+
     def reorder_controllers(self, number: int, order: list[int]) -> None:
         """Reordena os [State] de um statedef: `order` lista os índices atuais na nova ordem
         (no [Statedef -1], a ordem é a prioridade dos comandos)."""

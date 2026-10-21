@@ -503,7 +503,8 @@ CTRL_LOGGED = {"playsnd", "envshake", "palfx", "bgpalfx", "allpalfx", "envcolor"
 class Sim:
     def __init__(self, char, state: int, p2_dist: float = 50.0, seed: int = 7,
                  max_ticks: int = 900, commands: tuple = (), p2_clsn: list | None = None,
-                 p2_pose: str = "stand", p2_guard: bool = False, chain: tuple = ()):
+                 p2_pose: str = "stand", p2_guard: bool = False, chain: tuple = (),
+                 from_ground: bool = False):
         self.char = char
         self.p2_clsn = p2_clsn                    # Clsn2 do P2 (oponente real); sem = boneco do tamanho do char
         self.defs = char.all_statedefs()
@@ -537,7 +538,8 @@ class Sim:
         self.track: list[dict] = []
         self.enter(self.p1, state, first=True)
         self.p1.started = False
-        if self.p1.statetype == "A":                 # golpe aéreo: começa no alto do pulo, caindo
+        # golpe aéreo: começa no alto do pulo, caindo; from_ground = sai do chão (pulo com ataque)
+        if self.p1.statetype == "A" and not from_ground:
             self.p1.pos[1] = -1.3 * self.stand_h
             self.p1.vel = [self.p1.vel[0] or 2.0, self.p1.vel[1] or 0.5]
             self.p2.pos[1] = 0.0
@@ -1424,13 +1426,14 @@ class Sim:
 
 def simulate(char, state: int, p2_dist: float = 50.0, seed: int = 7, max_ticks: int = 900,
              commands: tuple = (), p2_clsn: list | None = None, p2_pose: str = "stand",
-             p2_guard: bool = False, chain: tuple = ()) -> Sim:
+             p2_guard: bool = False, chain: tuple = (), from_ground: bool = False) -> Sim:
     """Roda o estado `state` (e os que ele chama) até voltar ao parado. p2_clsn: as Clsn2 do
     oponente (ex.: `opponent_clsn(kfm)`); sem elas o P2 é um boneco do tamanho do char.
     p2_pose ("stand", "crouch", "air") e p2_guard dizem como o P2 espera o golpe; chain é uma
-    cadeia de estados (o 1º é `state`) que entram em seguida, para testar combos."""
+    cadeia de estados (o 1º é `state`) que entram em seguida, para testar combos. from_ground:
+    um estado aéreo que começa no chão (o pulo faz parte do golpe), em vez de no alto do pulo."""
     return Sim(char, state, p2_dist, seed, max_ticks, commands, p2_clsn, p2_pose, p2_guard,
-               chain).run()
+               chain, from_ground).run()
 
 
 # pose do boneco -> anims do oponente de verdade (Clsn2 de todos os quadros, somadas)
@@ -2041,6 +2044,6 @@ def combo_graph(char, sds=None) -> dict:
 
 def move_states(char) -> list[int]:
     """Estados com comando no .cmd entre 200 e 3999 (menos o 500 de carregar)."""
-    t = char.path_of("cmd").read_text("latin-1")
+    t = char.commands.doc.to_text()     # o texto em memória: um golpe novo ainda não salvo já conta
     return sorted({int(v) for v in re.findall(r"(?im)^\s*value\s*=\s*(\d+)\s*$", t)
                    if 200 <= int(v) < 4000 and int(v) != 500})

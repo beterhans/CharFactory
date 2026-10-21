@@ -177,7 +177,10 @@ def matches(ticks: list[Tick], seq: str, time: int = 15, buffer_time: int = 1) -
 
 def test(char, text: str) -> dict:
     """Comandos do personagem que a entrada aciona no último tick (e os que completam antes)."""
-    ticks = parse_input(text)
+    return test_ticks(char, parse_input(text))
+
+
+def test_ticks(char, ticks: list[Tick]) -> dict:
     if not ticks:
         return {"ticks": 0, "active": [], "earlier": []}
     active, earlier = [], []
@@ -219,3 +222,170 @@ def test(char, text: str) -> dict:
     for row in active + earlier:
         row["states"] = sorted(set(entries.get(row["name"].lower(), [])))
     return {"ticks": len(ticks), "active": active, "earlier": earlier}
+
+
+# ================================================================ [Statedef -1]
+
+POSES = {"stand": 0, "crouch": 11, "air": 50}       # estado de onde o jogador aperta
+_CMD_REF = re.compile(r'command\s*=\s*"([^"]+)"', re.I)
+
+
+def sequence_ticks(seq: str) -> list[Tick] | None:
+    """A entrada mais curta que completa o comando (None se não der para montar uma)."""
+    ticks: list[Tick] = []
+    cur = Tick("", frozenset())
+
+    def push(t: Tick):
+        nonlocal cur
+        ticks.append(t)
+        cur = t
+
+    try:
+        steps = parse_command(seq)
+    except (ValueError, IndexError):
+        return None
+    for step in steps:
+        direction, buttons = None, set()
+        for mode, sym, charge in step.elems:
+            if mode.startswith("release"):
+                held = Tick(sym if sym not in BUTTONS else cur.direction,
+                            cur.buttons | ({sym} if sym in BUTTONS else set()))
+                for _ in range(max(charge, 1) - (1 if cur == held else 0)):
+                    push(held)
+                if sym not in BUTTONS:
+                    direction = direction or ""
+            elif sym in BUTTONS:
+                if mode != "hold" and sym in cur.buttons:      # apertar de novo: solta antes
+                    push(Tick(cur.direction, cur.buttons - {sym}))
+                buttons.add(sym)
+            else:
+                if mode in ("press", "contains") and _active(cur, sym, mode == "contains"):
+                    push(Tick("", frozenset()))                # F, F: volta ao neutro no meio
+                direction = sym
+        keep = {b for b in cur.buttons if any(m == "hold" and s == b for m, s, _ in step.elems)}
+        push(Tick(cur.direction if direction is None else direction, frozenset(buttons | keep)))
+    try:
+        ok = matches(ticks, seq, len(ticks) + 1) == len(ticks) - 1
+    except (ValueError, IndexError):
+        ok = False
+    return ticks if ok else None
+
+
+def entry_commands(ctl) -> list[str]:
+    """Nomes de comando que uma entrada do [Statedef -1] testa."""
+    return [n for ex in ctl.triggers().values() for e in ex for n in _CMD_REF.findall(e)]
+
+
+def pose_ticks(ticks: list[Tick], pose: str) -> list[Tick]:
+    """A entrada feita agachado: segurando para baixo antes e durante (F vira DF)."""
+    if pose != "crouch":
+        return ticks
+    down = {"": "D", "F": "DF", "B": "DB"}
+    return [Tick("D", frozenset())] + [Tick(down.get(t.direction, t.direction), t.buttons) for t in ticks]
+
+
+def route(char, commands, pose: str = "stand", distance: float = 50.0) -> list[dict]:
+    """Entradas ChangeState do [Statedef -1] que disparam com estes comandos ativos, com o
+    jogador parado em `pose` e com controle, na ordem do arquivo: a primeira é a que o motor usa.
+    VarSet/VarAdd do [Statedef -1] rodam no caminho (muitos chars guardam ali a condição de combo)."""
+    from .simulate import Sim
+    sim = Sim(char, POSES[pose], p2_dist=distance, commands=tuple(commands), max_ticks=1)
+    sim.p1.ctrl = 1
+    sd = sim.statedef(-1)
+    out = []
+    for c in (sd[1] if sd else []):
+        kind = c.get("type")
+        if kind in ("varset", "varadd", "varrangeset"):
+            if sim._triggered(sim.p1, c):
+                sim.exec(sim.p1, c)
+            continue
+        if kind != "changestate" or not sim._triggered(sim.p1, c):
+            continue
+        v = re.match(r"^\s*(-?\d+)", c["params"].get("value", ""))
+        label = re.sub(r"^\s*-1\s*,\s*", "", c["label"])          # "-1, Soco" -> "Soco"
+        out.append({"index": c["index"], "label": label, "state": int(v[1]) if v else None})
+    return out
+
+
+def check_entry(char, index: int) -> dict:
+    """Para onde vai o comando de uma entrada do [Statedef -1]: se ela dispara e, se não, qual
+    entrada anterior toma a entrada antes (`taken_by`) e se as duas usam a mesma entrada."""
+    states = char.states_file_for(-1)
+    ctl = states.statedefs[-1].controllers[index]
+    names = entry_commands(ctl)
+    out: dict = {"label": ctl.label, "commands": names}
+    found = [c for n in names for c in char.commands.find(n)]
+    ticks = sequence_ticks(found[0].sequence) if found else None
+    if ticks is None:
+        out["unknown"] = ("command not defined in the .cmd: " + ", ".join(names)) if names and not found \
+            else "no command to test"
+        return out
+    out["input"] = found[0].sequence
+    for pose, distance in [(p, d) for d in (50.0, 1.0) for p in POSES]:
+        active = [r["name"] for r in test_ticks(char, pose_ticks(ticks, pose))["active"]]
+        fired = route(char, active, pose, distance)
+        if any(f["index"] == index for f in fired):
+            out["pose"], out["distance"] = pose, distance
+            if fired[0]["index"] != index:
+                first = fired[0]
+                out["taken_by"] = first
+                other = states.statedefs[-1].controllers[first["index"]]
+                theirs = [c for n in entry_commands(other) for c in char.commands.find(n)]
+                t2 = sequence_ticks(theirs[0].sequence) if theirs else None
+                act2 = ({r["name"].lower() for r in test_ticks(char, pose_ticks(t2, pose))["active"]}
+                        if t2 else set())
+                out["same_input"] = any(n.lower() in act2 for n in names)
+            return out
+    out["never_fires"] = True
+    return out
+
+
+def place_entry(char, index: int) -> dict:
+    """Confere a entrada `index` do [Statedef -1] e, se um golpe anterior pega a entrada dela
+    (o soco fraco antes da meia-lua + soco), sobe ela para logo antes dele."""
+    r = check_entry(char, index)
+    states = char.states_file_for(-1)
+    if "taken_by" in r and not r["same_input"] and hasattr(states, "reorder_controllers"):
+        n = len(states.statedefs[-1].controllers)
+        order = [i for i in range(n) if i != index]
+        order.insert(order.index(r["taken_by"]["index"]), index)
+        states.reorder_controllers(-1, order)
+        r["moved_before"] = r.pop("taken_by")
+        r.pop("same_input")
+    return r
+
+
+def input_owner(char, seq: str, pose: str = "stand") -> dict | None:
+    """A entrada do [Statedef -1] que já usa exatamente esta sequência (a meia-lua + soco de
+    outro especial), ou None. Um normal que só usa o botão não conta: o golpe novo vai antes dele."""
+    ticks = sequence_ticks(seq)
+    if ticks is None:
+        return None
+    ticks = pose_ticks(ticks, pose)
+    active = [r["name"] for r in test_ticks(char, ticks)["active"]]
+    entries = char.states_file_for(-1).statedefs.get(-1)
+    for f in route(char, active, pose):
+        theirs = [c for n in entry_commands(entries.controllers[f["index"]]) for c in char.commands.find(n)]
+        t2 = sequence_ticks(theirs[0].sequence) if theirs else None
+        if t2 is not None:
+            t2 = pose_ticks(t2, pose)
+            if matches(t2, seq, len(t2) + 1) == len(t2) - 1:
+                return f
+    return None
+
+
+MOTIONS = ("~D, DF, F", "~D, DB, B", "~F, D, DF", "~B, D, DB", "~F, DF, D, DB, B", "~B, DB, D, DF, F",
+           "~D, D", "F, F")
+
+
+def free_inputs(char, buttons=("x", "y", "a", "b", "c", "z"), pose: str = "stand", limit: int = 10) -> list[str]:
+    """Movimentos comuns + botão que nenhum golpe do personagem usa ainda."""
+    out = []
+    for motion in MOTIONS:
+        for b in buttons:
+            seq = f"{motion}, {b}"
+            if input_owner(char, seq, pose) is None:
+                out.append(seq)
+                if len(out) >= limit:
+                    return out
+    return out

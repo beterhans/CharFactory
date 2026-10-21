@@ -378,6 +378,14 @@ class MainWindow(QMainWindow):
         work.addWidget(self.center)
         work.setSizes([320, 1120])
         work.setChildrenCollapsible(False)
+        # assistente de IA à direita (fechado até Ctrl+Shift+A) e o servidor MCP para agentes externos
+        from .aipanel import AssistantPanel, GuiHost, McpService
+        self.ai_host = GuiHost(ctx, self)
+        self.mcp = McpService(ctx, self.ai_host)
+        self.assistant = AssistantPanel(ctx, self.ai_host, self)
+        work.addWidget(self.assistant)
+        self.assistant.hide()
+        self.work_split = work
         main_split.addWidget(work)
         main_split.addWidget(self.bottom)
         main_split.setSizes([700, 190])
@@ -435,6 +443,7 @@ class MainWindow(QMainWindow):
         self.autosave_timer = QTimer(self)
         self.autosave_timer.timeout.connect(self.autosave)
         self.apply_settings()
+        self.mcp.apply()
         self.apply_theme()
         self.show_page(None)
         geo = ctx.settings.get("geometry")
@@ -620,6 +629,12 @@ class MainWindow(QMainWindow):
         t.addActions([tool["cmd_test"], tool["movelist"]])
         t.addSeparator()
         self.act(t, tr("Options…"), self.settings_dialog, "Ctrl+K", "options")
+
+        ai = mb.addMenu(tr("&AI"))
+        self.assistant_action = self.act(ai, tr("Assistant"), self.toggle_assistant, "Ctrl+Shift+A", "ai", True)
+        self.act(ai, tr("Connect an agent (MCP)…"), lambda: self.ai_settings(1), None, "plug")
+        ai.addSeparator()
+        self.act(ai, tr("AI settings…"), self.ai_settings, None, "options")
 
         h = mb.addMenu(tr("&Help"))
         self.act(h, tr("Command palette…"), self.command_palette, None, "command")
@@ -1567,6 +1582,26 @@ class MainWindow(QMainWindow):
         if path:
             generate.movelist_html(self.ctx.char, path)
 
+    def toggle_assistant(self, on: bool | None = None) -> None:
+        on = not self.assistant.isVisible() if on is None else on
+        if on and not self.assistant.isVisible():
+            sizes = self.work_split.sizes()
+            self.assistant.show()
+            width = 380
+            self.work_split.setSizes([sizes[0], max(400, sizes[1] - width), width])
+            self.assistant.focus_input()
+        elif not on:
+            self.assistant.hide()
+        self.assistant_action.blockSignals(True)
+        self.assistant_action.setChecked(on)
+        self.assistant_action.blockSignals(False)
+
+    def ai_settings(self, tab: int = 0) -> None:
+        from .aipanel import AISettingsDialog
+        if AISettingsDialog(self.ctx, self.mcp, self, tab if isinstance(tab, int) else 0).exec():
+            self.mcp.apply()
+            self.assistant.refresh()
+
     def settings_dialog(self) -> None:
         dlg = dialogs.SettingsDialog(self.ctx, self)
         if dlg.exec() and dlg.language_changed:
@@ -1911,6 +1946,7 @@ class MainWindow(QMainWindow):
                 return
         self.ctx.settings["geometry"] = bytes(self.saveGeometry().toBase64()).decode()
         self.ctx.settings.save()
+        self.mcp.stop()
         e.accept()
 
 def app_icon():

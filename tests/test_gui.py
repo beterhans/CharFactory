@@ -340,6 +340,30 @@ def test_simulator_runs_off_the_ui_thread(gui):
     assert sp.sim is not old and sp.sim is not None
 
 
+def test_simulator_state_list_follows_the_model(gui):
+    """Um estado ou golpe novo (aplicado, ainda não salvo) entra na lista do simulador na hora,
+    sem trocar o estado escolhido; o botão de recarregar refaz a lista do mesmo jeito."""
+    from charfactory.formats import cmd, cns, mtext
+    app, ctx, win, _ = gui
+    sp, c = win.simulator, ctx.char
+    sp.run_state(200)
+    sp.play_action.setChecked(False)
+    ids = lambda: [sp.state.itemData(i) for i in range(sp.state.count())]   # noqa: E731
+    assert 1777 not in ids() and 1888 not in ids()
+    st = c.states[0]
+    c.states[0] = cns.States(mtext.parse(st.doc.to_text() + "\n[Statedef 1777]\ntype = S\n\n"
+                                         "[State 1777, fim]\ntype = ChangeState\ntrigger1 = 1\nvalue = 0\n"),
+                             st.path)
+    ctx.changed("states")
+    assert 1777 in ids() and sp.current_state() == 200
+    c.__dict__["commands"] = cmd.Commands(mtext.parse(c.commands.doc.to_text()
+                                                      + "\n[State -1, novo]\ntype = ChangeState\nvalue = 1888\n"
+                                                        "trigger1 = command = \"x\"\n"), c.commands.path)
+    sp.state.clear()
+    sp.reload_states.click()                    # o botão sozinho também acha o golpe novo
+    assert 1888 in ids() and "★" in sp.state.itemText(sp.state.findData(1888))
+
+
 def test_simulator_frame_data_guard_and_sound(gui, monkeypatch):
     """P2 defendendo, barra de frame data que leva ao tick com o clique e play que começa o
     som do tick atual e anda pelo relógio."""
@@ -970,7 +994,7 @@ def test_simplified_layout_menus_and_problems_panel(gui):
     assert win.states.tabs.tabBarAutoHide()
     # um menu de editor por vez, antes de Ferramentas; os outros seguem na paleta de comandos
     titles = [a.text().replace("&", "") for a in win.menuBar().actions()]
-    assert titles == ["Project", "Edit", "View", "Debug", "Sprites", "Tools", "Help"]
+    assert titles == ["Project", "Edit", "View", "Debug", "Sprites", "Tools", "AI", "Help"]
     win.show_page(win.states)
     titles = [a.text().replace("&", "") for a in win.menuBar().actions()]
     assert "States" in titles and "Sprites" not in titles

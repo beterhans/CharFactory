@@ -15,6 +15,8 @@
   charfactory sim <char.def> <estado ...> [--dist N] [--out pasta] [--gif] [--ticks]
                                                simula o estado tick a tick; --out grava a folha
   charfactory view <char.def> <grupo> <nº> [--palette N] [--scale 2] [--out x.png]   um sprite em PNG
+  charfactory mcp [char.def] [--standalone]   servidor MCP em stdio: liga-se à janela aberta (com o
+                                               servidor dela ligado) ou roda as ferramentas no char.def
 """
 from __future__ import annotations
 
@@ -63,11 +65,15 @@ def main(argv: list[str] | None = None) -> int:
     s = sub.add_parser("view"); s.add_argument("char"); s.add_argument("group", type=int)
     s.add_argument("item", type=int); s.add_argument("--palette", type=int)
     s.add_argument("--scale", type=int, default=2); s.add_argument("--out")
+    s = sub.add_parser("mcp"); s.add_argument("char", nargs="?"); s.add_argument("--standalone", action="store_true")
     a = p.parse_args(argv)
 
     def show(obj):
         print(json.dumps(obj, ensure_ascii=False, indent=1))
 
+    if a.cmd == "mcp":
+        from .ai import mcp
+        return mcp.main_stdio(a.char, a.standalone)
     if a.cmd == "convert-sff":
         data = sff.load(a.src)
         if a.version == 1:

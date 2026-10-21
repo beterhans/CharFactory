@@ -5,6 +5,7 @@ do MUGEN, gerando blocos CNS, entradas no CMD e controladores no [Statedef -1].
 """
 from __future__ import annotations
 
+import re
 from typing import Any
 from ..formats import mtext
 from ..project import Character
@@ -293,7 +294,8 @@ fall = {1 if data.get('fall', defs['fall']) else 0}
     if data.get("cancels"):
         move["cancel"] = list(data["cancels"])
 
-    return movespec.build_state(char, move, {})
+    # o movespec rotula tudo [State 0, …]; com o número do statedef o validador não reclama
+    return re.sub(r"(?m)^\[State 0,", f"[State {stateno},", movespec.build_state(char, move, {}))
 
 
 def build_command_cns(data: dict[str, Any]) -> tuple[dict[str, Any], str]:
@@ -358,6 +360,7 @@ def apply_move_to_character(char: Character, data: dict[str, Any]) -> dict[str, 
 
     cmd_added = False
     minus1_added = False
+    minus1_check: dict = {}
 
     # 2. Adiciona o comando ao CMD se requisitado
     if data.get("add_command", True):
@@ -383,6 +386,14 @@ def apply_move_to_character(char: Character, data: dict[str, Any]) -> dict[str, 
                 char.commands.states.add_controller(-1, minus1_ctrl)
                 char.mark("commands")
                 minus1_added = True
+                # no fim do -1 o soco/chute normal pegaria o botão antes: sobe a entrada
+                from . import cmdtest
+                from ..project import ProjectError
+                last = len(char.commands.states.statedefs[-1].controllers) - 1
+                try:
+                    minus1_check = cmdtest.place_entry(char, last)
+                except (ProjectError, OSError):      # sem SFF o simulador não sobe: fica no fim
+                    pass
 
     char.mark("states")
     return {
@@ -391,4 +402,5 @@ def apply_move_to_character(char: Character, data: dict[str, Any]) -> dict[str, 
         "cns_text": cns_text,
         "command_added": cmd_added,
         "minus1_added": minus1_added,
+        "minus1_check": minus1_check,
     }

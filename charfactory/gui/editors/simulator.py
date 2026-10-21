@@ -17,10 +17,11 @@ from PySide6.QtCore import QObject, QRunnable, Qt, QThreadPool, QTimer, Signal
 from PySide6.QtGui import QColor, QPainter, QPixmap
 from PySide6.QtWidgets import (QCheckBox, QComboBox, QDoubleSpinBox, QFileDialog, QHBoxLayout,
                                QLabel, QLineEdit, QListWidget, QListWidgetItem, QPushButton, QSlider,
-                               QSpinBox, QVBoxLayout, QWidget)
+                               QSpinBox, QToolButton, QVBoxLayout, QWidget)
 
 from ..canvas import pil_to_qimage
 from ..context import AppContext
+from ..icons import icon
 from ..widgets import DocStrip, Section, SidePanel, compact, form_row, hint_label, tool_bar
 from ...i18n import tr
 
@@ -415,6 +416,11 @@ class SimulatorPage(QWidget):
         self.state = QComboBox()
         self.state.setEditable(True)
         self.state.setToolTip(tr("State to simulate (the .cmd moves appear in the list)"))
+        self.reload_states = QToolButton()
+        self.reload_states.setIcon(icon("reload"))
+        self.reload_states.setToolTip(tr("Reload the state list"))
+        self.reload_states.setAutoRaise(True)
+        self.reload_states.clicked.connect(lambda: self.fill_states())
         self.dist = QDoubleSpinBox()
         self.dist.setRange(0, 400)
         self.dist.setValue(50)
@@ -474,7 +480,7 @@ class SimulatorPage(QWidget):
         self.events.itemActivated.connect(self.on_event)
         self.events.itemClicked.connect(self.on_event)
         setup = Section(tr("Simulation"), "sim.setup")
-        setup.add(form_row(tr("State"), self.state), form_row(tr("Chain"), self.chain), form_row("P2", self.p2_mode),
+        setup.add(form_row(tr("State"), self.state, self.reload_states),form_row(tr("Chain"), self.chain), form_row("P2", self.p2_mode),
                   form_row(tr("Distance"), self.dist), form_row(tr("Max ticks"), self.max_ticks),
                   form_row(tr("Compare"), self.compare), run)
         view = Section(tr("Display"), "sim.view")
@@ -548,7 +554,9 @@ class SimulatorPage(QWidget):
         for act in self.player.actions_by_tip.values():
             act.setEnabled(on)
 
-    def _model_changed(self, _part) -> None:
+    def _model_changed(self, part) -> None:
+        if part in ("states", "commands", "def"):
+            self.fill_states()      # um estado ou golpe novo entra na lista na hora
         if self.sim:
             self.sim = None
             self._gen += 1
@@ -586,21 +594,40 @@ class SimulatorPage(QWidget):
         if not c:
             return
         self.file_tab.set_file(tr("{0} · simulation").format(c.name), "simulate")
-        self.state.clear()
-        try:
-            from ...tools import simulate
-            moves = simulate.move_states(c)
-        except Exception:  # noqa: BLE001
-            moves = []
-        sds = c.all_statedefs(include_common=False)
-        for n in sorted(set(moves) | {n for n in sds if n >= 0}):
-            self.state.addItem(f"{n}" + (tr("  ★ move") if n in moves else ""), n)
-        if moves:   # começa no primeiro golpe, não no estado de vitória
-            self.state.setCurrentIndex(max(0, self.state.findData(min(moves))))
+        self.fill_states(keep=False)
         self.info.setText(tr("Pick a state and click Simulate."))
         # sem simulação a linha do tempo fica desligada (antes parecia pronta para arrastar)
         self.slider.setEnabled(False)
         self.tick_label.setText(tr("No simulation"))
+
+    def fill_states(self, keep: bool = True) -> None:
+        """Lista os estados do personagem (os golpes do .cmd marcados). Com `keep`, o estado
+        escolhido continua escolhido depois de refazer a lista."""
+        c = self.ctx.char
+        cur = self.current_state() if keep else None
+        self.state.blockSignals(True)
+        self.state.clear()
+        if c:
+            try:
+                from ...tools import simulate
+                moves = simulate.move_states(c)
+            except Exception:  # noqa: BLE001
+                moves = []
+            try:
+                sds = c.all_statedefs(include_common=False)
+            except Exception:  # noqa: BLE001 — texto aplicado com erro: fica só com os golpes
+                sds = {}
+            for n in sorted(set(moves) | {n for n in sds if n >= 0}):
+                self.state.addItem(f"{n}" + (tr("  ★ move") if n in moves else ""), n)
+            if cur is not None:
+                i = self.state.findData(cur)
+                if i >= 0:
+                    self.state.setCurrentIndex(i)
+                else:
+                    self.state.setEditText(str(cur))
+            elif moves:   # começa no primeiro golpe, não no estado de vitória
+                self.state.setCurrentIndex(max(0, self.state.findData(min(moves))))
+        self.state.blockSignals(False)
 
     def fill_compare(self) -> None:
         """Versões para o A/B: a salva no disco e os backups (o mais novo primeiro)."""

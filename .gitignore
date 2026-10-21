@@ -18,3 +18,7 @@ dist/
 .coverage
 htmlcov/
 *.spec
+
+# chaves de API locais
+.env
+.env.*
