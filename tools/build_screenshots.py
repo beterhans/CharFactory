@@ -586,7 +586,7 @@ def main() -> int:
         from charfactory.gui import dialogs
         from charfactory.gui import dialogs_tools
         from charfactory.gui import movewizard
-        from charfactory.gui import palettes12
+        from PySide6.QtWidgets import QDialog
         from charfactory.tools import charkit
 
         def transplant(dlg):
@@ -623,9 +623,12 @@ def main() -> int:
         on_exec(dialogs.SheetDialog, slicer)
         win.sheet()
 
-        on_exec(palettes12.PaletteSetDialog, lambda dlg: save_png(card(grab(dlg), ui, GRID_ASPECT), "only-palettes12.png"))
+        # o editor de paletas abre num QDialog comum: troca o exec só enquanto ele abre
+        plain_exec = QDialog.exec
+        on_exec(QDialog, lambda dlg: save_png(card(grab(dlg), ui, GRID_ASPECT), "only-palettes12.png"))
         win.show_page(win.sprites)
         win.sprites.open_palettes12()
+        QDialog.exec = plain_exec
 
         on_exec(dialogs.UnusedDialog, lambda dlg: save_png(card(grab(dlg), ui, GRID_ASPECT), "only-unused.png"))
         win.unused_resources()

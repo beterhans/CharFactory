@@ -133,8 +133,9 @@ class Entity:
     parent: "Entity | None" = None
     root: "Entity | None" = None
     scale: tuple = (1.0, 1.0)
-    trans: str | None = None
+    trans: str | None = None             # Trans: vale só no tick em que roda
     alpha: tuple | None = None
+    size: dict = field(default_factory=dict)   # size.* do Helper: o const() do helper usa estes
     angle: float = 0.0                   # AngleSet (fica)
     draw_angle: float | None = None      # AngleDraw: só no tick em que roda
     draw_scale: tuple | None = None
@@ -282,6 +283,14 @@ class Entity:
         raise simexpr.Unsupported(tr("trigger {0}").format(name))
 
     def const(self, key):
+        """Constante do char; num helper, o size.* que o Helper deu (size.xscale = ...)."""
+        if self.size:
+            k = key.lower()
+            parts = k.split(".")
+            for kk, idx in ((k, 0), (".".join(parts[:-1]), {"x": 0, "y": 1, "z": 2}.get(parts[-1], 0))):
+                if kk in self.size:
+                    vals = self.size[kk]
+                    return vals[min(idx, len(vals) - 1)]
         return self.sim.const(key)
 
     def command(self, name):
@@ -408,6 +417,7 @@ class Explod:
     born: int = 0
     pausemove: int = 0
     on_hit: bool = False
+    alpha: tuple | None = None           # alpha = s,d do Explod (com trans = addalpha)
 
 
 @dataclass
@@ -707,8 +717,9 @@ class Sim:
 
     def run_entity(self, ent: Entity):
         frozen = ent.frozen
-        if not frozen:                           # AngleDraw vale só no tick em que roda
+        if not frozen:                           # AngleDraw e Trans valem só no tick em que rodam
             ent.draw_angle, ent.draw_scale = None, None
+            ent.trans, ent.alpha = None, None
         switches = 0
         while True:
             sd = self.statedef(ent.stateno)
@@ -885,6 +896,7 @@ class Sim:
             return
         if typ in ("trans",):
             ent.trans = p.get("trans", "none").lower()
+            ent.alpha = self.evpair(ent, p["alpha"], (256, 256)) if "alpha" in p else None
             return
         if typ == "angleset":
             ent.angle = float(g("value", ent.angle))
@@ -1003,7 +1015,8 @@ class Sim:
                    # faísca: nasce do acerto (movehit/movecontact, ou o contador de acertos que
                    # os modelos do repertório usam: hitcount > var(1))
                    on_hit=any(re.search(r"(?i)move(hit|contact)|\bhitcount\b", t)
-                              for ts in [c["triggerall"], *c["triggers"].values()] for t in ts))
+                              for ts in [c["triggerall"], *c["triggers"].values()] for t in ts),
+                   alpha=self.evpair(ent, p["alpha"], (256, 256)) if "alpha" in p else None)
         self.explods.append(e)
         self.events.append({"t": self.tick, "who": ent.name, "kind": "explod", "value": anim,
                             "label": c["label"]})
@@ -1031,6 +1044,10 @@ class Sim:
         h.facing = ent.facing * (1 if int(g("facing", 1)) >= 0 else -1)
         h.pos = [bx + ox * (bf if postype != "p2" else bf), by + oy]
         h.scale = (float(g("size.xscale", 1)), float(g("size.yscale", 1)))
+        # o resto do size.* do Helper (size.head.pos, size.height…) vale no const() do helper
+        h.size = {k: [float(v) for v in self.evpair(ent, p[k], (0, 0))[:len(_split_args(p[k]))]]
+                  for k in p if k.startswith("size.")}
+        h.size["size.xscale"], h.size["size.yscale"] = [h.scale[0]], [h.scale[1]]
         h.pausemove = int(g("pausemovetime", 0)) or int(g("supermovetime", 0))
         h.anim = ent.anim
         h.screen = postype in ("left", "right", "front", "back")
@@ -1328,7 +1345,10 @@ class Sim:
                 e.pos[1] += e.vel[1]
                 e.vel = (e.vel[0] + e.accel[0], e.vel[1] + e.accel[1])
             a = self.char.anims.get(e.anim)
-            ends = a is not None and a.total_time > 0 and all(f.time > 0 for f in a.frames)
+            # só um quadro de tempo -1 segura a anim para sempre; tempo 0 (comum no último
+            # quadro das faíscas) não: com ele a explod nunca saía e o helper que espera
+            # !NumExplod para se destruir ficava na tela até o fim
+            ends = a is not None and a.total_time > 0 and all(f.time >= 0 for f in a.frames)
             if e.removetime == -2 and (a is None or (ends and e.t >= a.total_time)):
                 e.alive = False
             elif e.removetime >= 0 and e.t > e.removetime:
@@ -1389,7 +1409,7 @@ class Sim:
                              scale=(ent.scale[0] * (ent.draw_scale or (1, 1))[0],
                                     ent.scale[1] * (ent.draw_scale or (1, 1))[1]),
                              angle=ent.draw_angle or 0.0,
-                             inv=inv, trans=ent.trans, clsn1=self.boxes(ent, "1"),
+                             inv=inv, trans=ent.trans, alpha=ent.alpha, clsn1=self.boxes(ent, "1"),
                              clsn2=self.boxes(ent, "2"), helper=ent.is_helper,
                              stype=ent.statetype, hd=bool(ent.hitdef) and not ent.hitdef_hit,
                              atk=bool(ent.hitdef),
@@ -1403,7 +1423,7 @@ class Sim:
                 if f is not None:
                     scr.append(dict(anim=e.anim, frame=f, pos=(e.pos[0] - self.origin_x + 160, e.pos[1] + 40),
                                     facing=e.facing, scale=e.scale, angle=e.angle, spr=e.spr,
-                                    trans=e.trans, label=e.label))
+                                    trans=e.trans, alpha=e.alpha, label=e.label))
             if not e.alive or e.space == "screen":       # cut-in e linhas na tela: fora da folha do palco
                 continue
             f = frame_at(self.char, e.anim, e.t)
@@ -1411,7 +1431,7 @@ class Sim:
                 continue
             exps.append(dict(anim=e.anim, frame=f, pos=tuple(e.pos), facing=e.facing,
                              vfacing=e.vfacing, scale=e.scale, angle=e.angle, spr=e.spr,
-                             trans=e.trans, label=e.label, owner=e.owner.name, age=e.t,
+                             trans=e.trans, alpha=e.alpha, label=e.label, owner=e.owner.name, age=e.t,
                              on_hit=e.on_hit, born=e.born, key=id(e)))
         self.track.append(dict(t=self.tick, ents=ents, explods=exps,
                                helper_states=sorted({h.stateno for h in self.helpers if h.alive}),
@@ -1514,6 +1534,40 @@ def _gray(im: Image.Image, alpha=0.75):
     return Image.fromarray(a.astype(np.uint8), "RGBA")
 
 
+def _blend(frame, trans: str | None, alpha) -> tuple[str, float, float]:
+    """(modo, fonte, fundo) de um sprite, como o MUGEN mistura: o `trans` do Trans/Explod manda
+    (none = opaco; add; add1 = fundo pela metade; addalpha com alpha = fonte,fundo de 0 a 256;
+    sub) e, sem ele (ou com default), vale a transparência do AIR (A, A1, S/Sub, AS<n>D<m>)."""
+    t = (trans or "").lower()
+    if t in ("", "default"):
+        return _trans_air(frame)
+    if t == "none":
+        return "normal", 1.0, 1.0
+    if t == "sub":
+        return "sub", 1.0, 1.0
+    if t == "add1":
+        return "add", 1.0, 0.5
+    if t == "addalpha" and alpha:
+        s, d = (max(0.0, min(256.0, float(v))) / 256 for v in alpha)
+        return ("normal", s, 1.0) if d == 0 and s >= 1 else ("add", s, d)
+    return "add", 1.0, 1.0
+
+
+def _trans_air(frame) -> tuple[str, float, float]:
+    t = (getattr(frame, "trans", "") or "").strip().upper()
+    if t in ("S", "SUB"):
+        return "sub", 1.0, 1.0
+    m = re.match(r"AS(\d+)D(\d+)", t)
+    if m:
+        s, d = int(m[1]) / 256, int(m[2]) / 256
+        return ("normal", 1.0, 1.0) if d == 0 and s >= 1 else ("add", s, d)
+    if t == "A1":
+        return "add", 1.0, 0.5
+    if t.startswith("A"):
+        return "add", 1.0, 1.0
+    return "normal", 1.0, 1.0
+
+
 P2_ANIM = {"stand": 0, "hit": 5000, "fall": 5030, "air": 5030, "down": 5110, "crouch": 11,
            "crouchhit": 5020, "jump": 41, "guard": 150, "crouchguard": 152}
 
@@ -1530,8 +1584,8 @@ def _screen_layer(sim: Sim, rec: dict, size, front: bool):
         im, ax, ay = _frame_img(sim.char, x["frame"])
         if im is None:
             continue
-        mode, al = _trans(x["frame"])
-        if (x["trans"] or "") in ("add", "addalpha", "add1") or mode == "add":
+        mode, al, _ = _blend(x["frame"], x["trans"], x.get("alpha"))
+        if mode == "add":
             # brilho aditivo sobre o que estiver atrás: vira alfa pelo brilho do pixel
             a = np.asarray(im.convert("RGBA"), np.float32)
             a[..., 3] = a[..., 3] * a[..., :3].max(axis=2) / 255 * al
@@ -1567,11 +1621,9 @@ def render_tick(sim: Sim, rec: dict, window, zoom=2, boxes=True, show_p2=True):
         if im is None:
             continue
         im = _palfx(im, e["pal"])
-        mode, al = _trans(e["frame"])
-        if e["trans"] in ("add", "addalpha", "add1"):
-            mode = "add"
+        mode, al, dl = _blend(e["frame"], e["trans"], e.get("alpha"))
         items.append((e["spr"], e["name"], (im, ax, ay, e["pos"][0], e["pos"][1], e["scale"][0],
-                                            e["scale"][1], e["facing"], e.get("angle", 0.0), mode, al)))
+                                            e["scale"][1], e["facing"], e.get("angle", 0.0), mode, al, dl)))
     for x in rec["explods"]:
         im, ax, ay = _frame_img(sim.char, x["frame"])
         if im is None:
@@ -1579,16 +1631,12 @@ def render_tick(sim: Sim, rec: dict, window, zoom=2, boxes=True, show_p2=True):
         if x["vfacing"] < 0:
             im = im.transpose(Image.FLIP_TOP_BOTTOM)
             ay = im.height - ay
-        mode, al = _trans(x["frame"])
-        if x["trans"] in ("add", "addalpha", "add1"):
-            mode = "add"
-        elif x["trans"] == "sub":
-            mode = "sub"
+        mode, al, dl = _blend(x["frame"], x["trans"], x.get("alpha"))
         items.append((x["spr"], "fx", (im, ax, ay, x["pos"][0], x["pos"][1], x["scale"][0],
-                                       x["scale"][1], x["facing"], x["angle"], mode, al)))
+                                       x["scale"][1], x["facing"], x["angle"], mode, al, dl)))
     items.sort(key=lambda t: t[0])
-    for _, who, (im, ax, ay, x, y, sx, sy, fc, ang, mode, al) in items:
-        cv.blit(im, ax, ay, x, y, sx, sy, fc, ang, mode, al)
+    for _, who, (im, ax, ay, x, y, sx, sy, fc, ang, mode, al, *dl) in items:
+        cv.blit(im, ax, ay, x, y, sx, sy, fc, ang, mode, al, dl[0] if dl else 1.0)
     d = ImageDraw.Draw(cv.im)
     if boxes:
         for e in rec["ents"]:
@@ -1699,6 +1747,11 @@ def _window(sim: Sim):
     xs, ys = [], []
     for r in sim.track:
         for e in r["ents"]:
+            # helper sem nada na tela (sprite -1, invisível) não entra: os que ficam estacionados
+            # em 999,999 como controle abriam a janela e encolhiam os chars num canto
+            f = e["frame"]
+            if e["name"] != "P1" and (e["inv"] or f is None or f.group < 0):
+                continue
             xs.append(e["pos"][0]); ys.append(e["pos"][1])
         xs.append(r["p2"]["pos"][0]); ys.append(r["p2"]["pos"][1])
     h = sim.stand_h

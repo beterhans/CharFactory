@@ -33,7 +33,7 @@ INSTRUCTIONS = (
     "boxes (AIR), constants, sprites and sounds, and run moves in a tick-by-tick simulator for frame "
     "data. Start with character_info. Changes stay in memory (and can be undone in the editor) until "
     "save_project writes them to disk; only save when the user asks. After editing states or "
-    "animations, run validate_character, and simulate_state to check a move. " + tools.MOVE_RECIPE)
+    "animations by hand, run validate_character, and simulate_state to check a move. " + tools.MOVE_RECIPE)
 
 
 def new_token() -> str:

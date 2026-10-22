@@ -7,6 +7,146 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **Import images** window (Add image, Add several images, dropping images on the window and
+  pasting), with a preview of how each image will look:
+  group and first index; the colors from the character palette (1,1), from any palette in the
+  SFF, from an **own palette** made from the image (one per image or one for the whole batch, up
+  to N colors; an indexed image that fits keeps its palette) or as **true colors** (32-bit PNG,
+  for images with more colors than a palette holds; MUGEN 1.1 and Ikemen); optional dithering;
+  and the transparent background (automatic, alpha, top-left corner, index 0 of the image or a
+  picked color), which always goes to index 0 of a new palette. A note warns when the colors
+  change a lot in the chosen palette. Before, every image was remapped to palette 1,1.
+- Import images: group and index from the file name
+  (`kfm_200-3.png`), numbering in steps of 1 or 10, the axis by 9 anchors or exact X/Y (a yellow
+  cross in the preview), **Keep the indices and use the palette** (swap) besides adapting the
+  image, a reversed palette (last color as background), reusing an identical palette already in
+  the SFF and choosing the number of the new one, **Don't crop the image**, and images equal to a
+  sprite that already exists becoming a link to it (always, never or ask).
+
+- Sprite editor, Palettes panel: **All palettes in the SFF**, besides the character palettes
+  (1,x): the palette slider goes through every palette in the file.
+  Picking one shows a sprite that uses it, the grid edits that exact palette (even when the SFF
+  repeats the same number) and the text links to every sprite that uses it, or says none does.
+- Palette editor: **Color effects**, in two lines: **Turn** one color into
+  another (blue into red and so on; only the tones of that color change, skin, grays and the rest
+  stay) and an **Effect** list (grayscale, invert, sepia, lighter, darker, more and less
+  saturated, swapping or rotating the red, green and blue channels). They act on the selected
+  colors or the whole palette, each one an Undo step.
+- AI: **build_move** makes a whole move from a list of steps, without writing CNS. The agent
+  says what each step does (strike, launcher, jump, air strike, air finisher, finisher, dash) and
+  which animation it uses; the tool writes one statedef per step, each one chained only if the
+  step before it hit, with enough hitstun for the next step, the launch, the jump after the
+  opponent and the landing, plus the command and the [Statedef -1] entry. It then tunes launch
+  height, jump strength and timing in the simulator until every hit connects, and says which
+  step misses and why when one does. The jump is added on its own, and an animation with no
+  attack box gets a copy with one. Calling it again with the same state changes the move.
+  The move follows the character's own style, read from its other moves: its hit and guard
+  sounds, its sparks (the Explod or Helper its normals create on a hit, with sparkno = -1) and
+  its SuperPause. Every ground step closes in to the opponent, and in a step with several hits
+  only the last one launches or knocks down.
+- AI: guide topic **style**, what to do and what to avoid when writing moves by hand, measured on
+  260 JUS-style characters: helpers instead of the Projectile controller, the character's own
+  sparks and sounds, SuperPause without the engine's flash, the Explod and HitDef values most of
+  them use, and effect angles, facing and scale (angles written facing right, since the engine
+  mirrors them; facing by postype; varied sparks; uniform scale; the character's own scale
+  factor). The projectiles and supers topics now teach the same.
+- **Ctrl+F searches the open tab**: animations by number or name, sprites by group or
+  group,item, sounds by group or group,number, statedefs by number or comment, commands by name
+  or input, [Statedef -1] entries by the state they go to, and states in the simulator; the
+  exact number comes first. In the code tabs, finding the text in the file is the last item of
+  the list. Ctrl+H and the Definitions tab keep the text search.
+
+### Changed
+
+- AI assistant: much shorter path to a move. The recipe sends the agent to build_move after one
+  look at the animations, instead of reading the guide, other moves and dozens of animations
+  first; the guide is no longer sent on every step (mugen_guide still has it); the editor note
+  about what is on screen is used only when the user points at it; pictures already seen are not
+  sent again (Gemini, OpenAI); Gemini thinks at the low level on each step (models without levels
+  fall back on their own); and after eight read-only calls in a row the agent is reminded to act.
+
+- **Slice sprite sheet**: the sheet fills the window, with zoom (wheel, buttons, Ctrl+0/Ctrl+9,
+  zoom to the selected box) and panning (middle button or Space), and the boxes are edited right
+  on it: drag one to move it, its handles to resize, the yellow cross to move the axis, drag on an
+  empty spot to add one, Del removes, arrows nudge, and X/Y/W/H/axis fields for exact values,
+  with Undo/Redo. The detection runs by itself at each setting (no more Show preview button),
+  without discarding boxes edited by hand; **Hide the background** shows what will be cut, the
+  background color can be picked on the sheet, and the settings are remembered.
+- One **Palette editor** (Ctrl+Shift+P) replaces the advanced palette editor and the separate
+  "12 palettes by color bands" window. A strip at the top shows the character in each of its
+  palettes 1–12 (an empty slot is a **+** that leads to making it); below are the color grid, the
+  preview with the character's poses and three tabs: **Colors** (the color tools), **New palette**
+  (hue, saturation and brightness with the preview showing the result before saving) and
+  **12 palettes** (color bands with locks, a scheme that generates palettes 2–12, and adjusting one
+  band in one palette, applied at once). The sprite editor's Palettes panel opens it on the
+  right tab.
+- Palette editor: editing a color repaints the sprite at each color tried (Cancel puts it back),
+  clicking the sprite selects its color in the grid and **Blink the selected colors** shows where
+  they are (or where the chosen band is). The preview only lists sprites drawn with the character
+  palette.
+- Palette editor: **Undo**/**Redo** buttons and Ctrl+Z/Ctrl+Y inside the editor (it opens in its
+  own window, which the main window's Ctrl+Z did not reach, so a tool like Grayscale could only be
+  reverted by reloading from disk), and **Back to how it was** returns every palette to how it was
+  when the editor opened. Each palette tool is its own undo step, also in the Palettes panel of
+  the sprite editor.
+- Simulator timeline: sounds, effects and screen events triggered by `AnimElem = N`,
+  `AnimElemTime(N) = M` or `!Time` (with or without a `triggerall`) can be dragged to another tick,
+  not only those with `trigger1 = Time = N`; a frame trigger stays a frame trigger. Dropping one in
+  the hit pause says that it plays when the pause ends, and the tooltip of an event that cannot be
+  dragged says why. The cursor is an open hand (closed while dragging) instead of the resize
+  arrows.
+- States: an **Organize** choice at the top of the state tree, also in View › State tree:
+  **Smart** (grouped by what each state is) or **Classic** (every state by number). The old file-order list opens as
+  Classic.
+- Open characters: one button on the main bar with the current character (and how many others
+  are open) and a menu to switch, open another or close, instead of tabs that shrank and cut the
+  names when several were open.
+- Palette editor: it always opens on the sprite on screen (the frame's sprite on the Animations
+  page) with that sprite's default palette, whatever palette the panel had picked; a sprite with
+  its own palette (like 3,0 of an effect) opens on that palette.
+- 12 palettes: two new schemes. **Themes** gives each palette its own look (shadow, gold, ice,
+  toxic, royal, fire, ocean, ghost, pastel, military, neon), tinting white and gray bands too, and
+  the strip shows each name; **Surprise** draws color harmonies again on each click. The bands now
+  take every sprite into account (colors used only after the first 120 sprites never changed).
+- 12 palettes: choose which palettes to generate (from/to) and **Only empty slots** to keep the
+  ones already made; with **Also fix the .def**, the buttons in `[Palette Keymap]` (when some
+  palette could not be picked, like every button on palette 1) and `pal.defaults` (so the engine
+  does not repeat palette 1 for the CPU or a mirror match) are set too, in the same undo step.
+- Palette editor: a note at the top says when the .def keeps palettes from being picked in the
+  game, with a **Fix in the .def** button. **Back to how it was** also puts the .def back.
+- The .def is now part of Undo/Redo, like sprites and states.
+- Cleaner palette icons: the painter's palette is drawn with curves, and the 12 palettes icon has
+  room between the swatches.
+- States, Smart view: a **Helpers** group gathers the states that helpers run (the `stateno` of
+  each Helper and the states they change to), whatever their number; states the character also
+  goes to stay with the character.
+- Sprite editor, Palettes panel: picking a palette shows the sprite with it (it used to jump back
+  to the sprite's palette), and a sprite with its own palette (like 3,0 of an effect) shows and
+  edits that one, with a note when the character palettes do not change it.
+
+### Fixed
+
+- Unused resources: sounds played with `PlaySnd value = S35,7`, animations picked as
+  `1060 + (random % 3)`, sparks from `sparkno = S7000`, the KO sound 11,0, get-hit sprites
+  5000–5999 (used by the opponent's throws) and screenpack sprites 9000–9999 no longer appear as
+  unused. Resources a computed expression may reach (`7800 + var(3)`) go to a separate
+  **Maybe used** group.
+- Ikemen GO: `stcommon = common1.cns` finds `data/common1.cns.zss`, as the engine does.
+- Simulator: an Explod whose animation ends in a frame of time 0 (common in hit sparks) now goes
+  away with `removetime = -2`; before it stayed to the end, and so did the helper waiting for
+  `!NumExplod` to destroy itself.
+- Simulator: `const(size.xscale)` and the other `size.*` constants inside a helper are the ones the
+  Helper controller gave it, not the character's (sparks of a helper drawn 2.5× too big).
+- Simulator: invisible helpers (sprite -1, often parked at 999,999) no longer widen the view,
+  which shrank the characters into a corner.
+- Simulator: `Trans = sub` on the character or a helper, `alpha = s,d` of Explod and Trans with
+  `addalpha`, `Sub` in the AIR and the destination part of `AS<n>D<m>` are drawn as the engine
+  does; `Trans` only lasts the tick it runs.
+- Palettes 1,2 and up: **Clear colors no sprite uses** blanked the whole palette, and swapping,
+  sorting or moving colors in one character palette left the others with colors out of place.
+
 ## [0.2.5] - 2026-10-21
 
 ### Added

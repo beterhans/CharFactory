@@ -71,6 +71,9 @@ class SpriteEditor(QWidget):
         super().__init__()
         self.ctx = ctx
         self._quiet = False
+        self._picked_pal: int | None = None    # paleta escolhida na lista "Todas as paletas do SFF"
+        self._pal_jump = False                 # indo ao sprite de uma paleta: a lista não segue o sprite
+        self._pal_uses: dict[int, list] | None = None
         self._ext: dict[str, tuple[int, int, int, int]] = {}   # arquivo externo -> sprite e eixo
         self.ext_watch = QFileSystemWatcher(self)
         self.ext_watch.fileChanged.connect(self.on_external_image)
@@ -220,10 +223,11 @@ class SpriteEditor(QWidget):
         # ------------------------------------------------ painel direito (paletas)
         from .palettes import PaletteGrid
         self.pal_tools = tool_bar([
-            ("new", tr("New palette (variant of the current one)"), self.new_palette),
+            ("palette", tr("Palette editor: colors, new palettes and the 12 palettes · Ctrl+Shift+P"),
+             self.open_advanced),
+            ("new", tr("New palette (variant of the current one)…"), self.new_palette),
             ("delete", tr("Delete the palette"), self.delete_palette),
             ("picker", tr("Set the color of the selected indices"), self.set_color),
-            ("palette", tr("Advanced palette editor · Ctrl+Shift+P"), self.open_advanced),
             MORE,
             ("palettes12", tr("12 palettes by color bands (skin, hair, clothes)…"), self.open_palettes12),
             ("swap_colors", tr("Swap the position of the selected colors"), self.swap_colors),
@@ -231,9 +235,19 @@ class SpriteEditor(QWidget):
             ("palette_apply", tr("Apply the palette to the sprites in 'Act on'"), self.apply_palette),
             ("eraser", tr("Clear colors no sprite uses"), self.clear_unused),
         ])
+        self.pal_scope = QComboBox()
+        self.pal_scope.addItem(tr("Character palettes (1,x)"), "char")
+        self.pal_scope.addItem(tr("All palettes in the SFF"), "all")
+        self.pal_scope.setToolTip(tr("The character palettes are the ones the player picks in the game; the SFF "
+                                     "also keeps the own palettes of effects, portraits and other sprites"))
+        if ctx.settings.get("sprite_pal_scope") == "all":
+            self.pal_scope.setCurrentIndex(1)
+        self.pal_scope.currentIndexChanged.connect(self.on_pal_scope)
         self.pal_nav = Navigator()
-        self.pal_nav.indexChanged.connect(lambda _: self.on_palette())
+        self.pal_nav.indexChanged.connect(lambda _: self.on_palette_picked())
         self.use_sprite_pal = QCheckBox(tr("Use the sprite's palette"))
+        self.use_sprite_pal.setToolTip(tr("On: each sprite shows with the palette it has and the panel follows it. "
+                                          "Picking another palette turns it off to show the sprite with that one."))
         self.use_sprite_pal.setChecked(True)
         self.use_sprite_pal.toggled.connect(lambda _: self.on_palette())
         self.pal_label = QLabel()
@@ -244,12 +258,13 @@ class SpriteEditor(QWidget):
         compact(self.color_count, self.scope, self.onion_mode)
         self.pal_grid = PaletteGrid()
         self.pal_grid.setMinimumSize(192, 192)
-        self.pal_grid.colorEdited.connect(self.on_color_edited)
+        self.pal_grid.editRequested.connect(self.on_color_edit)
         self.pal_label.setObjectName("infoChip")
         self.pal_label.setWordWrap(True)
+        self.pal_label.linkActivated.connect(self._go_to_sprite)
         right_content = QWidget()
         rv = QVBoxLayout(right_content)
-        for w in (self.pal_tools, self.pal_nav, self.use_sprite_pal, self.pal_label):
+        for w in (self.pal_tools, self.pal_scope, self.pal_nav, self.use_sprite_pal, self.pal_label):
             rv.addWidget(w)
         rv.addLayout(form_row(tr("Colors"), self.color_count))
         rv.addWidget(self.pal_grid)
@@ -271,6 +286,7 @@ class SpriteEditor(QWidget):
         ctx.themeChanged.connect(self.on_theme)
         ctx.modelChanged.connect(lambda part: part == "sprites" and QTimer.singleShot(0, lambda: self.load(keep=True)))
         self.on_theme()
+        self._show_pal_scope()
 
     def on_theme(self) -> None:
         self.canvas.set_theme(self.ctx.theme)
@@ -324,7 +340,9 @@ class SpriteEditor(QWidget):
         p = self.char.path_of("sprite")
         self.file_tab.set_file(p.name if p else "—")
         self.nav.set_count(len(self.sprites()))
-        self.pal_nav.set_count(len(self.char_palettes()))
+        self._pal_uses = None
+        self._pal_scope_count()
+        self.pal_nav.set_count(self._pal_nav_count())
         if self.org_box.isVisible():
             self.fill_organizer()
         self.nav.set_index(min(idx, max(0, len(self.sprites()) - 1)))
@@ -389,6 +407,36 @@ class SpriteEditor(QWidget):
         i = self.pal_nav.index()
         return pals[i].item if 0 <= i < len(pals) else None
 
+    def own_palette(self):
+        """Paleta própria (fora das 1,x) do sprite atual, como a 3,0 de um efeito; senão None."""
+        spr = self.current()
+        if spr is None or spr.is_truecolor or spr.palette_index is None:
+            return None
+        pals = self.char.sprites.palettes
+        p = pals[spr.palette_index] if 0 <= spr.palette_index < len(pals) else None
+        return p if p is not None and p.group != 1 else None
+
+    def palette_key(self):
+        """A paleta que a grade mostra e as ferramentas editam: a própria do sprite, quando ele
+        usa uma e o painel segue o sprite; senão a 1,N escolhida. Na lista de todas as paletas,
+        a escolhida nela, pela posição (um SFF pode repetir o mesmo número)."""
+        if self._all_pals() and self.char:
+            pals = self.char.sprites.palettes
+            k = self._picked_pal
+            return (pals[k].group, pals[k].item, k) if k is not None and 0 <= k < len(pals) else None
+        own = self.own_palette() if self.use_sprite_pal.isChecked() else None
+        return (own.group, own.item) if own is not None else self.selected_palette_slot()
+
+    def shown_palette(self):
+        key = self.palette_key()
+        if key is None:
+            return None
+        if isinstance(key, tuple) and len(key) == 3:
+            return self.char.sprites.palettes[key[2]]
+        g, i = key if isinstance(key, tuple) else (1, key)
+        k = self.char.sprites.find_palette(g, i)
+        return self.char.sprites.palettes[k] if k >= 0 else None
+
     def refresh(self) -> None:
         spr = self.current()
         if spr is None:
@@ -397,7 +445,7 @@ class SpriteEditor(QWidget):
             self.info.setText(tr("No sprites") if self.char else "")
             self.usage.setText("")
             return
-        slot = None if self.use_sprite_pal.isChecked() else self.selected_palette_slot()
+        slot = None if self.use_sprite_pal.isChecked() or self._all_pals() else self.selected_palette_slot()
         img = render.sprite_image(self.char, spr.group, spr.item, slot)
         if self.show_trans.isChecked() and not spr.is_truecolor:
             pal = self.char.sprites.palettes[spr.palette_index] if spr.palette_index is not None else None
@@ -414,7 +462,13 @@ class SpriteEditor(QWidget):
         self.info.setText(f"{spr.width} × {spr.height} px ({spr.color_depth} bits) · {spr.format_name}"
                           + (tr(" · linked") if spr.linked_to is not None else tr(" · unique")) + (tr(" · {0} link(s)").format(same) if same else ""))
         self.usage.setText(self._usage_text(spr))
-        if self.use_sprite_pal.isChecked() and spr.palette_index is not None and not spr.is_truecolor:
+        if self._all_pals():
+            if not self._pal_jump and spr.palette_index is not None and not spr.is_truecolor:
+                self._picked_pal = spr.palette_index      # o slider segue a paleta do sprite
+                self._quiet = True
+                self.pal_nav.set_index(spr.palette_index)
+                self._quiet = False
+        elif self.use_sprite_pal.isChecked() and spr.palette_index is not None and not spr.is_truecolor:
             p = self.char.sprites.palettes[spr.palette_index]
             self._quiet = True
             pals = self.char_palettes()
@@ -463,23 +517,138 @@ class SpriteEditor(QWidget):
         self.canvas.set_onion(render.sprite_image(self.char, other.group, other.item), other.axis_x, other.axis_y)
 
     def show_palette(self) -> None:
-        pals = self.char_palettes()
-        i = self.pal_nav.index()
-        if 0 <= i < len(pals):
-            p = pals[i]
-            self.pal_label.setText(tr("Group {0}, index {1} · {2} colors").format(p.group, p.item, len(p.colors)))
-            self.pal_grid.set_colors(p.colors)
-            k = self.color_count.findData(len(p.colors))
-            self.color_count.setCurrentIndex(k if k >= 0 else self.color_count.count() - 1)
+        p = self.shown_palette() if self.char else None
+        if p is None:
+            return
+        own = self.own_palette()
+        text = tr("Group {0}, index {1} · {2} colors").format(p.group, p.item, len(p.colors))
+        if self._all_pals():
+            text = self._palette_uses_text(p)
+        elif p.group != 1:
+            text = tr("Own palette {0},{1} of this sprite · {2} colors. Edits here change only the sprites "
+                      "that use it.").format(p.group, p.item, len(p.colors))
+        elif own is not None:
+            text += tr(" · This sprite has its own palette ({0},{1}): the character palettes do not change it. "
+                       "Turn on “Use the sprite's palette” to edit it.").format(own.group, own.item)
+        self.pal_label.setText(text)
+        self.pal_grid.set_colors(p.colors)
+        k = self.color_count.findData(len(p.colors))
+        self.color_count.setCurrentIndex(k if k >= 0 else self.color_count.count() - 1)
 
     def on_palette(self) -> None:
         if not self._quiet:
             self.refresh()
 
+    # ------------------------------------------------------------ todas as paletas do SFF
+
+    def _all_pals(self) -> bool:
+        return self.pal_scope.currentData() == "all"
+
+    def _show_pal_scope(self) -> None:
+        self.use_sprite_pal.setVisible(not self._all_pals())
+
+    def _pal_nav_count(self) -> int:
+        """O slider passa pelas paletas do personagem ou, como no FFS, por todas as do SFF."""
+        if not self.char:
+            return 0
+        try:
+            return len(self.char.sprites.palettes) if self._all_pals() else len(self.char_palettes())
+        except Exception:  # noqa: BLE001 — personagem sem SFF
+            return 0
+
+    def _pal_scope_count(self) -> None:
+        try:
+            n = len(self.char.sprites.palettes) if self.char else 0
+        except Exception:  # noqa: BLE001 — personagem sem SFF
+            n = 0
+        self.pal_scope.setItemText(1, tr("All palettes in the SFF ({0})").format(n) if n else tr("All palettes in the SFF"))
+
+    def on_pal_scope(self, _=None) -> None:
+        self.ctx.settings["sprite_pal_scope"] = self.pal_scope.currentData()
+        self._show_pal_scope()
+        self._quiet = True
+        self.pal_nav.set_count(self._pal_nav_count())
+        self._quiet = False
+        if self._all_pals():
+            spr = self.current()
+            self._picked_pal = spr.palette_index if spr is not None and not spr.is_truecolor else None
+        elif not self.use_sprite_pal.isChecked():
+            self.use_sprite_pal.setChecked(True)      # volta a mostrar cada sprite com a paleta dele
+        if self.char:
+            self.refresh()
+
+    def palette_uses(self) -> dict[int, list]:
+        """Posição da paleta -> sprites (indexados) que a usam."""
+        if self._pal_uses is None:
+            uses: dict[int, list] = {}
+            for spr in self.sprites():
+                if spr.palette_index is not None and not spr.is_truecolor:
+                    uses.setdefault(spr.palette_index, []).append(spr)
+            self._pal_uses = uses
+        return self._pal_uses
+
+    def pick_any_palette(self, k: int) -> None:
+        """Slider em todas as paletas: a paleta k vai para a grade e, se o sprite na tela não a
+        usa, passa a mostrar o primeiro que usa."""
+        if not self.char or not 0 <= k < len(self.char.sprites.palettes):
+            return
+        self._picked_pal = k
+        spr = self.current()
+        users = self.palette_uses().get(k, [])
+        if users and (spr is None or spr.palette_index != k):
+            self._pal_jump = True
+            try:
+                self.select(users[0].group, users[0].item)
+            finally:
+                self._pal_jump = False
+        else:
+            self.show_palette()
+
+    def _palette_uses_text(self, p) -> str:
+        k = self._picked_pal
+        users = self.palette_uses().get(k, []) if k is not None else []
+        text = tr("Palette {0},{1} · {2} colors").format(p.group, p.item, len(p.colors))
+        if not users:
+            return text + tr(" · no sprite uses it")
+        color = self.ctx.theme.ui.get("accent", "#6366f1") if self.ctx.theme else "#6366f1"
+        links = ", ".join(f'<a href="{s.group},{s.item}" style="color:{color}">{s.group},{s.item}</a>'
+                          for s in users[:12])
+        more = tr(" and {0} more").format(len(users) - 12) if len(users) > 12 else ""
+        return text + " · " + tr("used by {0} sprite(s): {1}{2}").format(len(users), links, more)
+
+    def _go_to_sprite(self, ref: str) -> None:
+        g, i = (int(v) for v in ref.split(","))
+        self._pal_jump = True
+        try:
+            self.select(g, i)
+        finally:
+            self._pal_jump = False
+
+    def on_palette_picked(self) -> None:
+        """Escolher uma paleta no navegador mostra o sprite com ela. Antes, com 'Usar a paleta do
+        sprite' ligado, a escolha voltava sozinha para a paleta do sprite e a edição sumia."""
+        if self._quiet:
+            return
+        if self._all_pals():
+            self.pick_any_palette(self.pal_nav.index())
+            return
+        if self.use_sprite_pal.isChecked():
+            self.use_sprite_pal.blockSignals(True)
+            self.use_sprite_pal.setChecked(False)
+            self.use_sprite_pal.blockSignals(False)
+        self.refresh()
+
     # ------------------------------------------------------------ edição de sprite
 
     def _changed(self) -> None:
         self.ctx.changed("sprites")
+
+    def _palette_changed(self) -> None:
+        """Ferramenta de paleta (um clique): vira um passo próprio do Ctrl+Z."""
+        h = self.ctx.undo_stack()
+        if h:
+            h.cut("sprites")
+        self._changed()
 
     def on_axis(self, x: int, y: int) -> None:
         spr = self.current()
@@ -656,33 +825,38 @@ class SpriteEditor(QWidget):
         return start
 
     def import_image(self) -> None:
-        path = self._ask_image()
-        if not path:
-            return
-        spr = self.current()
-        r = ask_pair(self, tr("Add"), tr("Group,index:"), f"{spr.group},{self._free_item(spr.group, spr.item)}" if spr else "0,0")
-        if r:
-            ops.import_sprite(self.char, path, *r)
-            self._changed()
-            QTimer.singleShot(10, lambda: self.select(*r))
+        self._import(many=False)
 
     def import_many(self) -> None:
-        paths, _ = QFileDialog.getOpenFileNames(self, tr("Add images (in name order)"), "",
-                                                tr("Images (*.png *.pcx *.gif *.bmp)"))
-        if not paths:
+        self._import(many=True)
+
+    def _import(self, many: bool) -> None:
+        from ..spriteimport import ask_images
+        self.import_paths(ask_images(self, many))
+
+    def import_paths(self, paths: list) -> None:
+        """Janela de importar: grupo e número, paleta (do personagem, do SFF, própria ou cores
+        reais), fundo transparente e prévia. Antes tudo ia para a paleta 1,1 sem perguntar.
+        Vale para Adicionar, arrastar imagens para a janela e colar."""
+        from ..spriteimport import ImportSpritesDialog
+        paths = [str(p) for p in paths]
+        if not paths or not self.char:
             return
         spr = self.current()
-        g, ok = QInputDialog.getInt(self, tr("Add images"), tr("Group for the {0} images:").format(len(paths)),
-                                    spr.group if spr else 0, 0, 99999)
-        if not ok:
-            return
-        item = first = self._free_item(g)
-        for p in sorted(paths):
-            ops.import_sprite(self.char, p, g, item)
-            item = self._free_item(g, item + 1)
-        self._changed()
-        QTimer.singleShot(10, lambda: self.select(g, first))
-        self.ctx.status.emit(tr("{0} image(s) in group {1}").format(len(paths), g))
+        g = spr.group if spr else 0
+        dlg = ImportSpritesDialog(self.ctx, paths, g, self._free_item(g, spr.item if spr else 0), self)
+        if dlg.exec() and dlg.result:
+            made = dlg.result["sprites"]
+            self._changed()
+            self.load(keep=True)                 # já mostra o primeiro importado
+            self.select(*made[0])
+            r = dlg.result
+            self.ctx.status.emit(tr("{0} image(s) imported").format(len(made))
+                                 + (tr(" · palette {0},{1} created").format(*r["palette"]) if r.get("palette") else
+                                    tr(" · {0} palettes created").format(len(r["palettes"])) if r.get("palettes") else "")
+                                 + (tr(" · {0} linked to identical sprites").format(len(r["linked"]))
+                                    if r.get("linked") else ""))
+        dlg.deleteLater()
 
     def change_image(self) -> None:
         spr = self.current()
@@ -747,10 +921,7 @@ class SpriteEditor(QWidget):
         i = self._free_item(g, spr.item if spr else 0)
         tmp = Path(tempfile.gettempdir()) / "charfactory_paste.png"
         img.save(tmp)
-        ops.import_sprite(self.char, tmp, g, i)
-        self._changed()
-        QTimer.singleShot(10, lambda: self.select(g, i))
-        self.ctx.status.emit(tr("Image pasted as {0},{1}").format(g, i))
+        self.import_paths([tmp])
 
     # ------------------------------------------------------------ editor de imagem embutido
 
@@ -870,14 +1041,9 @@ class SpriteEditor(QWidget):
     # ------------------------------------------------------------ paletas (painel direito)
 
     def new_palette(self) -> None:
-        slot = self.selected_palette_slot()
-        if slot is None:
-            return
-        n, ok = QInputDialog.getInt(self, tr("New palette"), tr("Hue (degrees) for the variant:"), 120, -180, 180)
-        if ok:
-            target = 1 + max(p.item for p in self.char_palettes())
-            ops.make_palette_variant(self.char, target, n, base=slot)
-            self._changed()
+        """Nova paleta: o editor de paletas na aba Nova paleta, com a prévia antes de gravar."""
+        from .palettes import PaletteEditor
+        self.open_palette_editor(PaletteEditor.TAB_NEW)
 
     def delete_palette(self) -> None:
         slot = self.selected_palette_slot()
@@ -889,7 +1055,7 @@ class SpriteEditor(QWidget):
             except ValueError as e:
                 QMessageBox.warning(self, tr("Delete palette"), str(e))
                 return
-            self._changed()
+            self._palette_changed()
 
     def _selection(self):
         a, b = sorted(self.pal_grid.sel)
@@ -897,19 +1063,19 @@ class SpriteEditor(QWidget):
 
     def swap_colors(self) -> None:
         a, b = self._selection()
-        slot = self.selected_palette_slot()
+        slot = self.palette_key()
         if slot is not None and a != b:
             edit.swap_palette_colors(self.char, slot, a, b)
-            self._changed()
+            self._palette_changed()
 
     def remap(self) -> None:
         a, b = self.pal_grid.sel
-        slot = self.selected_palette_slot()
+        slot = self.palette_key()
         if slot is None or a == b:
             self.ctx.status.emit(tr("Click the source index and Shift+click the destination"))
             return
         r = edit.remap_palette_index(self.char, slot, a, b)
-        self._changed()
+        self._palette_changed()
         self.ctx.status.emit(tr("Index {0} → {1} in {2} sprite(s)").format(a, b, r['sprites_remapped']))
 
     def apply_palette(self) -> None:
@@ -917,18 +1083,18 @@ class SpriteEditor(QWidget):
         t = self.targets()
         if slot is not None and t:
             r = edit.set_sprites_palette(self.char, [list(x) for x in t], slot)
-            self._changed()
+            self._palette_changed()
             self.ctx.status.emit(tr("Palette 1,{0} applied to {1} sprite(s)").format(slot, r['sprites']))
 
     def clear_unused(self) -> None:
-        slot = self.selected_palette_slot()
+        slot = self.palette_key()
         if slot is not None:
             r = edit.clear_unused_colors(self.char, slot)
-            self._changed()
+            self._palette_changed()
             self.ctx.status.emit(tr("{0} unused color(s) cleared").format(r['cleared']))
 
     def on_color_count(self, _=None) -> None:
-        slot = self.selected_palette_slot()
+        slot = self.palette_key()
         n = self.color_count.currentData()
         if slot is None or not n:
             return
@@ -938,45 +1104,74 @@ class SpriteEditor(QWidget):
             self.show_palette()
             return
         edit.set_palette_size(self.char, slot, n)
-        self._changed()
+        self._palette_changed()
 
     def set_color(self) -> None:
-        from PySide6.QtGui import QColor
-        from PySide6.QtWidgets import QColorDialog
         a, b = self._selection()
-        slot = self.selected_palette_slot()
-        cur = self.pal_grid.colors[a] if a < len(self.pal_grid.colors) else (0, 0, 0)
-        c = QColorDialog.getColor(QColor(*cur), self) if slot is not None else None
-        if c and c.isValid():
-            edit.set_palette_colors(self.char, slot, {str(i): [c.red(), c.green(), c.blue()] for i in range(a, b + 1)})
-            self._changed()
+        self._edit_colors(list(range(a, b + 1)))
 
-    def on_color_edited(self, i: int, rgb) -> None:
-        slot = self.selected_palette_slot()
-        if slot is not None:
-            edit.set_palette_colors(self.char, slot, {str(i): list(rgb)})
-            self._changed()
+    def on_color_edit(self, i: int) -> None:
+        """Duplo clique numa cor; com uma faixa selecionada que a contém, pinta a faixa toda."""
+        a, b = self._selection()
+        self._edit_colors(list(range(a, b + 1)) if a <= i <= b and a != b else [i])
+
+    def _edit_colors(self, indices: list[int]) -> None:
+        """Escolha de cor com o sprite atualizando a cada cor; Cancelar volta como estava."""
+        from .palettes import edit_colors_live
+        slot, p = self.palette_key(), self.shown_palette()
+        if slot is None or p is None:
+            return
+        title = tr("Color {0}").format(indices[0]) if len(indices) == 1 else \
+            tr("Colors {0}–{1}").format(indices[0], indices[-1])
+        rgb = edit_colors_live(self, p, indices, title, self._redraw_palette)
+        if rgb is not None:
+            edit.set_palette_colors(self.char, slot, {str(i): list(rgb) for i in indices})
+            self._palette_changed()
+
+    def _redraw_palette(self) -> None:
+        self._quiet = True               # repinta sem mexer no navegador de paletas
+        self.refresh()
+        self._quiet = False
 
     def open_palettes12(self) -> None:
-        from ..palettes12 import PaletteSetDialog
-        if not self.char:
-            return
-        try:
-            dlg = PaletteSetDialog(self.ctx, self)
-        except ValueError as e:
-            QMessageBox.information(self, tr("12 palettes"), str(e))
-            return
-        dlg.exec()
-        dlg.deleteLater()
+        from .palettes import PaletteEditor
+        self.open_palette_editor(PaletteEditor.TAB_SET)
 
     def open_advanced(self) -> None:
+        self.open_palette_editor()
+
+    def default_palette_slot(self, spr):
+        """A paleta padrão do sprite: a 1,N que ele usa (normalmente a 1,1), ou a própria dele
+        ((grupo, item), como a 3,0 de um efeito). Sprite sem paleta: a primeira do personagem."""
+        pals = self.char.sprites.palettes
+        if spr is not None and not spr.is_truecolor and spr.palette_index is not None                 and 0 <= spr.palette_index < len(pals):
+            p = pals[spr.palette_index]
+            return p.item if p.group == 1 else (p.group, p.item)
+        char = self.char_palettes()
+        return min(p.item for p in char) if char else None
+
+    def open_palette_editor(self, tab: int | None = None, sprite=None) -> None:
+        """Tudo das paletas numa janela (cores, nova paleta e as 12 paletas), sempre no sprite
+        atual (ou no `sprite` dado, como o frame da animação na tela) e na paleta padrão dele;
+        se pedido, numa aba."""
         from .palettes import PaletteEditor
+        if not self.char:
+            return
         dlg = QDialog(self)
-        dlg.setWindowTitle(tr("Advanced palette editor"))
-        dlg.resize(1100, 640)
+        dlg.setWindowTitle(tr("Palette editor"))
+        dlg.resize(1280, 800)
         lay = QVBoxLayout(dlg)
         ed = PaletteEditor(self.ctx)
         ed.load()
+        spr = self.char.sprites.find(*sprite) if sprite else self.current()
+        if spr is None:
+            spr = self.current()
+        slot = self.default_palette_slot(spr)
+        if tab is not None and isinstance(slot, tuple):
+            slot = self.default_palette_slot(None)   # Nova paleta e 12 paletas são das 1,x
+        ed.open_on((spr.group, spr.item) if spr is not None else None, slot)
+        if tab is not None:
+            ed.tabs.setCurrentIndex(tab)
         lay.addWidget(ed)
         dlg.exec()
         dlg.deleteLater()      # fechado, o editor não deve seguir recarregando a cada mudança

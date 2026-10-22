@@ -107,7 +107,8 @@ class _Canvas:
         return (x - self.x0) * self.sc, (y - self.y0) * self.sc
 
     def blit(self, im, ax, ay, x, y, sx=1.0, sy=1.0, facing=1, angle=0.0, mode="normal",
-             alpha=1.0):
+             alpha=1.0, dst=1.0):
+        """mode add/sub: fundo × dst ± fonte × alpha (o AS<s>D<d> e o alpha = s,d do MUGEN)."""
         if im is None:
             return
         w = max(1, round(im.width * abs(sx) * self.sc))
@@ -139,10 +140,13 @@ class _Canvas:
             return
         src = np.asarray(im, np.float32)
         box = (x0, y0, x1, y1)
-        dst = np.asarray(self.im.crop(box), np.float32)
-        rgb = src[..., :3] * (src[..., 3:4] / 255) * alpha
-        o = dst.copy()
-        o[..., :3] = np.clip(dst[..., :3] - rgb if mode == "sub" else dst[..., :3] + rgb, 0, 255)
+        dst_ = np.asarray(self.im.crop(box), np.float32)
+        dst_k = dst
+        cover = src[..., 3:4] / 255
+        rgb = src[..., :3] * cover * alpha
+        keep = dst_[..., :3] * (1 - cover * (1 - dst_k))     # o fundo só escurece onde há sprite
+        o = dst_.copy()
+        o[..., :3] = np.clip(keep - rgb if mode == "sub" else keep + rgb, 0, 255)
         self.im.paste(Image.fromarray(o.astype(np.uint8), "RGBA"), box)
 
 

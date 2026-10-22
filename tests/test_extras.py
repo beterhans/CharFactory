@@ -328,3 +328,27 @@ def test_palettes12_bands_schemes_and_locked_bands(mugen_dir, tmp_path):
     assert all(c.sprites.find_palette(1, n) >= 0 for n in range(2, 13))
     img = P.preview_image(c, 0, 0, pals[5])
     assert img is not None and img.size == P.preview_image(c, 0, 0, base).size
+
+
+def test_palettes12_themes_and_surprise_change_more(mugen_dir, tmp_path):
+    """Temas e Surpresa: cada paleta com outra cara, inclusive nos brancos/cinzas (que girar o
+    matiz não muda), nomes para a tira, e o sorteio muda a cada vez (fixo com a mesma semente)."""
+    import shutil
+    from charfactory import project
+    from charfactory.tools import palettes12 as P
+    shutil.copytree(mugen_dir / "chars" / "kfm", tmp_path / "kfm")
+    c = project.load(tmp_path / "kfm" / "kfm.def", mugen_dir)
+    base = [tuple(x) for x in c.sprites.palettes[c.sprites.find_palette(1, 1)].colors]
+    rngs = P.ranges(base, P.used_indices(c))
+    labels = {}
+    pals = {n: P.adjust(base, rngs, a) for n, a in P.scheme("temas", rngs, labels=labels).items()}
+    assert sorted(labels) == list(range(2, 13)) and len(set(labels.values())) == 11
+    free = [j for j, r in enumerate(rngs) if not r["locked"]]
+    for j in free:
+        i = rngs[j]["indices"][0]
+        assert len({pals[n][i] for n in pals}) >= 8, rngs[j]["name"]
+    neutral = [j for j in free if rngs[j]["sat"] < 0.14 and any(base[i] != (0, 0, 0) for i in rngs[j]["indices"])]
+    for j in neutral:                                         # o cinza/branco também ganha cor
+        assert any(pals[n][i] != base[i] for n in pals for i in rngs[j]["indices"])
+    a = P.scheme("sortear", rngs, seed=1)
+    assert a == P.scheme("sortear", rngs, seed=1) and a != P.scheme("sortear", rngs, seed=2)

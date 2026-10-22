@@ -199,17 +199,17 @@ def remap_palette_index(char: Character, slot: int, src: int, dst: int) -> dict:
     p = _pal(char, slot)
     mapping = list(range(256))
     mapping[src] = dst
-    n = _remap_sprites(char, char.sprites.palettes.index(p), mapping)
+    n = _remap_sprites(char, _family(char, p), mapping)
     char.mark("sprites")
     return {"slot": slot, "sprites_remapped": n}
 
 
-def used_palette_indices(char: Character, slot: int) -> set[int]:
-    p = _pal(char, slot)
-    pi = char.sprites.palettes.index(p)
+def used_palette_indices(char: Character, slot) -> set[int]:
+    """Índices que os sprites desenhados com a paleta usam (para 1,N: os de qualquer 1,x)."""
+    fam = set(_family(char, _pal(char, slot)))
     used: set[int] = set()
     for s in char.sprites.sprites:
-        if s.palette_index == pi and not s.is_truecolor:
+        if s.palette_index in fam and not s.is_truecolor:
             used |= set(char.sprites.pixels(s))
     return used
 
@@ -374,11 +374,48 @@ def optimize_action(char: Character, number: int) -> dict:
 
 # ================================================================ paletas
 
-def _pal(char: Character, slot: int):
-    i = char.sprites.find_palette(1, slot)
+def _pal(char: Character, slot):
+    """Paleta 1,slot; com (grupo, item), qualquer paleta do SFF (a própria de um efeito, 3,0…);
+    com (grupo, item, posição), exatamente a da posição (um SFF pode repetir o mesmo número)."""
+    if isinstance(slot, (tuple, list)) and len(slot) == 3:
+        pals = char.sprites.palettes
+        if not 0 <= slot[2] < len(pals):
+            raise ValueError(tr("palette {0},{1} does not exist").format(slot[0], slot[1]))
+        return pals[slot[2]]
+    g, it = slot if isinstance(slot, (tuple, list)) else (1, slot)
+    i = char.sprites.find_palette(g, it)
     if i < 0:
-        raise ValueError(tr("palette 1,{0} does not exist").format(slot))
+        raise ValueError(tr("palette {0},{1} does not exist").format(g, it))
     return char.sprites.palettes[i]
+
+
+def _family(char: Character, p) -> list[int]:
+    """Paletas que dividem os índices dos pixels com `p`: as de personagem (1,x) trocam entre si
+    na escolha de cor, então os sprites desenhados com a 1,1 também valem para a 1,5; uma
+    paleta própria (3,0 de um efeito) é só ela."""
+    pals = char.sprites.palettes
+    if p.group == 1:
+        return [i for i, q in enumerate(pals) if q.group == 1]
+    return [next(i for i, q in enumerate(pals) if q is p)]   # não index(): paletas iguais se confundem
+
+
+def reorder_palette(char: Character, slot, order: list[int]) -> int:
+    """Põe as cores na ordem `order` (nova posição k recebe a cor da antiga order[k]) sem mudar
+    a imagem: os pixels dos sprites são remapeados e as outras paletas da família (1,x) andam
+    junto, senão a paleta 2 passava a pintar os índices trocados. Devolve os sprites remapeados."""
+    p = _pal(char, slot)
+    pals = char.sprites.palettes
+    fam = _family(char, p)
+    for i in fam:
+        q = pals[i]
+        cols = list(q.colors) + [(0, 0, 0)] * max(0, len(order) - len(q.colors))
+        q.colors = [cols[k] for k in order] + cols[len(order):]
+    inverse = list(range(256))
+    for new, old in enumerate(order):
+        inverse[old] = new
+    n = _remap_sprites(char, fam, inverse)
+    char.mark("sprites")
+    return n
 
 
 def _grow(p, n: int) -> None:
@@ -409,32 +446,93 @@ def palette_gradient(char: Character, slot: int, start: int, end: int, color_a, 
     return {"slot": slot, "filled": n + 1}
 
 
+PALETTE_EFFECTS = ("grayscale", "invert", "sepia", "swap_rg", "swap_rb", "swap_gb", "rotate_rgb",
+                   "rotate_rbg", "lighter", "darker", "saturate", "desaturate")
+# matiz (graus) de cada família de cor, para "azul vira vermelho" e afins
+HUE_FAMILIES = {"red": 0, "orange": 30, "yellow": 55, "green": 120, "cyan": 180, "blue": 225,
+                "purple": 275, "pink": 320}
+
+
+def _effect_color(effect: str, c: tuple) -> tuple:
+    import colorsys
+    r, g, b = c
+    if effect == "grayscale":
+        y = round(0.299 * r + 0.587 * g + 0.114 * b)
+        return y, y, y
+    if effect == "invert":
+        return 255 - r, 255 - g, 255 - b
+    if effect == "sepia":
+        return (min(255, round(0.393 * r + 0.769 * g + 0.189 * b)),
+                min(255, round(0.349 * r + 0.686 * g + 0.168 * b)),
+                min(255, round(0.272 * r + 0.534 * g + 0.131 * b)))
+    # trocas de canal: o que era vermelho vira verde, e assim por diante
+    swaps = {"swap_rg": (g, r, b), "swap_rb": (b, g, r), "swap_gb": (r, b, g),
+             "rotate_rgb": (b, r, g), "rotate_rbg": (g, b, r)}
+    if effect in swaps:
+        return swaps[effect]
+    if effect == "lighter":
+        return tuple(round(v + (255 - v) * 0.15) for v in c)
+    if effect == "darker":
+        return tuple(round(v * 0.85) for v in c)
+    h, l, s = colorsys.rgb_to_hls(r / 255, g / 255, b / 255)
+    s = min(1.0, s * 1.25) if effect == "saturate" else s * 0.75
+    return tuple(round(v * 255) for v in colorsys.hls_to_rgb(h, l, s))
+
+
 def palette_effect(char: Character, slot: int, effect: str, indices: list[int] | None = None) -> dict:
-    """effect: 'grayscale' ou 'invert'. O índice 0 (transparente) é preservado."""
-    if effect not in ("grayscale", "invert"):
-        raise ValueError(tr("the effect must be 'grayscale' or 'invert'"))
+    """Efeito de cor na paleta (ou só nos índices dados): tons de cinza, inverter, sépia, trocas de
+    canal (swap_rg, swap_rb, swap_gb, rotate_rgb, rotate_rbg), mais claro/escuro e mais/menos
+    saturado. O índice 0 (transparente) é preservado."""
+    if effect not in PALETTE_EFFECTS:
+        raise ValueError(tr("the effect must be one of: {0}").format(", ".join(PALETTE_EFFECTS)))
     p = _pal(char, slot)
     sel = [i for i in (indices or range(1, len(p.colors))) if 0 < i < len(p.colors)]
     for i in sel:
-        r, g, b = p.colors[i]
-        if effect == "grayscale":
-            y = round(0.299 * r + 0.587 * g + 0.114 * b)
-            p.colors[i] = (y, y, y)
-        else:
-            p.colors[i] = (255 - r, 255 - g, 255 - b)
+        p.colors[i] = _effect_color(effect, p.colors[i])
     char.mark("sprites")
     return {"slot": slot, "changed": len(sel)}
 
 
-def _remap_sprites(char: Character, palette_index: int, mapping: list[int]) -> int:
-    """Reescreve os pixels dos sprites que usam a paleta: novo índice = mapping[antigo]."""
+def recolor_family(char: Character, slot, source: str, target: str,
+                   indices: list[int] | None = None) -> dict:
+    """Uma família de cor vira outra (ex.: azul -> vermelho): as cores com matiz perto da de
+    `source` giram até a de `target`, mantendo claro/escuro e saturação; as demais (pele,
+    cinzas, outras cores) ficam. A borda da faixa gira menos, para não marcar degrau."""
+    import colorsys
+    if source not in HUE_FAMILIES or target not in HUE_FAMILIES:
+        raise ValueError(tr("the colors must be one of: {0}").format(", ".join(HUE_FAMILIES)))
+    p = _pal(char, slot)
+    src, shift = HUE_FAMILIES[source], HUE_FAMILIES[target] - HUE_FAMILIES[source]
+    sel = [i for i in (indices or range(1, len(p.colors))) if 0 < i < len(p.colors)]
+    n = 0
+    for i in sel:
+        r, g, b = p.colors[i]
+        h, l, s = colorsys.rgb_to_hls(r / 255, g / 255, b / 255)
+        if s < 0.12 or l < 0.06 or l > 0.97:
+            continue                     # cinza, quase preto ou quase branco: sem cor para trocar
+        d = abs((h * 360 - src + 180) % 360 - 180)
+        w = 1.0 if d <= 25 else max(0.0, (45 - d) / 20)
+        if w <= 0:
+            continue
+        h = (h + shift * w / 360) % 1.0
+        p.colors[i] = tuple(round(v * 255) for v in colorsys.hls_to_rgb(h, l, s))
+        n += 1
+    if n:
+        char.mark("sprites")
+    return {"slot": slot, "changed": n}
+
+
+def _remap_sprites(char: Character, palette_index, mapping: list[int]) -> int:
+    """Reescreve os pixels dos sprites que usam a paleta (ou uma das paletas de uma lista):
+    novo índice = mapping[antigo]."""
     s = char.sprites
+    which = {palette_index} if isinstance(palette_index, int) else set(palette_index)
     lut = bytes(mapping[i] if i < len(mapping) else i for i in range(256))
     n = 0
     for spr in list(s.sprites):
-        if spr.palette_index == palette_index and not spr.is_truecolor:
+        if spr.palette_index in which and not spr.is_truecolor:
             img = Image.frombytes("P", (spr.width, spr.height), s.pixels(spr).translate(lut))
-            s.set_sprite(spr.group, spr.item, img, spr.axis_x, spr.axis_y, palette_index)
+            s.set_sprite(spr.group, spr.item, img, spr.axis_x, spr.axis_y, spr.palette_index)
             n += 1
     return n
 
@@ -443,12 +541,13 @@ def swap_palette_colors(char: Character, slot: int, a: int, b: int, remap_sprite
     """Troca duas cores de posição; com remap_sprites a imagem continua igual."""
     p = _pal(char, slot)
     _grow(p, max(a, b))
-    p.colors[a], p.colors[b] = p.colors[b], p.colors[a]
     n = 0
     if remap_sprites:
-        mapping = list(range(256))
-        mapping[a], mapping[b] = b, a
-        n = _remap_sprites(char, char.sprites.palettes.index(p), mapping)
+        order = list(range(len(p.colors)))
+        order[a], order[b] = b, a
+        n = reorder_palette(char, slot, order)
+    else:
+        p.colors[a], p.colors[b] = p.colors[b], p.colors[a]
     char.mark("sprites")
     return {"slot": slot, "sprites_remapped": n}
 
@@ -462,13 +561,11 @@ def sort_palette_by_tones(char: Character, slot: int = 1, remap_sprites: bool = 
         prev = cols[order[i - 1]]
         best = min(range(i, len(cols)), key=lambda j: sum((x - y) ** 2 for x, y in zip(cols[order[j]], prev)))
         order[i], order[best] = order[best], order[i]
-    p.colors = [cols[k] for k in order]
     n = 0
     if remap_sprites:
-        inverse = list(range(256))
-        for new, old in enumerate(order):
-            inverse[old] = new
-        n = _remap_sprites(char, char.sprites.palettes.index(p), inverse)
+        n = reorder_palette(char, slot, order)
+    else:
+        p.colors = [cols[k] for k in order]
     char.mark("sprites")
     return {"slot": slot, "sprites_remapped": n}
 

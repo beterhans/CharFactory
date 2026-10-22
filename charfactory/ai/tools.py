@@ -18,30 +18,36 @@ from pathlib import Path
 from typing import Callable
 
 from .. import project, validate
-from ..tools import ops
+from ..tools import combo, ops
 
 MAX_IMAGE_SIDE = 1568          # acima disso os provedores reduzem a imagem de qualquer jeito
 MAX_TEXT = 60_000              # resposta de ferramenta maior que isso é cortada (contexto do modelo)
 
-# o caminho para um golpe novo, nas instruções do MCP e do assistente
+# o caminho para um golpe novo, nas instruções do MCP e do assistente. Curto e direto: modelos
+# rápidos seguem cada passo ao pé da letra, e explorar demais (ler golpes, olhar dezenas de
+# animações) gasta a cota antes de escrever qualquer coisa
 MOVE_RECIPE = (
-    "To make a move: 1) understand what the user wants it to do (the motion, when it hits, from where) "
-    "and read the mugen_guide topics it needs; 2) find the poses: list_animations(search=...) says what "
-    "each animation is (a jump, a jump kick, a crouching punch); look at the candidates with "
-    "view_animations before choosing, never pick sprites by number alone; 3) reuse an animation or "
-    "make one with build_animation (boxes fitted to each sprite); 4) write the move: create_move gives "
-    "a working starting point (statedef, command, [Statedef -1] entry); then write the statedef you "
-    "need with set_state(replace=true); 5) check it with simulate_state: "
-    "its path shows where the character goes, when it crosses the opponent and from which side it "
-    "hits (writing an attack state also returns a quick `simulation` verdict); never tell the user a "
-    "move works while the simulation says it misses; fix and simulate again until it does what was "
-    "asked, then stop and answer (do not rewrite "
-    "a move that works; if a change makes it worse, put back the text that worked). To change an "
-    "existing move, get_move shows its statedef, animations, input and verdict in one call; fix "
-    "parameters with edit_state and frames, timing or boxes with edit_animation instead of rewriting "
-    "whole blocks. A new move gets "
-    "new state and animation numbers: never overwrite another move unless the user asks to change "
-    "that one. The game only sees saved files: tell the user to save before testing in MUGEN, and if "
+    "To make a new move, from one hit to a long combo, use build_move: you pick the poses and what "
+    "each step does, and it writes the statedefs, [Command] and [Statedef -1] entry and tunes the "
+    "physics in the simulator. 1) Map the request onto roles: ground punches and kicks = strike, "
+    "'throws the enemy up' = launcher, an aerial attack = air_strike or air_finisher (the jump is "
+    "added for you), a knockdown = finisher, closing in = dash. 2) Call list_animations once (with "
+    "`search` on a big character) and pick each pose by its name; only when the names do not say "
+    "enough, look at the few candidates in ONE view_animations call. 3) Call build_move. 4) Read its "
+    "verdict: if a step MISSES, follow its hint and call build_move again with the same state; as "
+    "soon as every hit connects, stop and answer. For a new move do not read the character's other "
+    "states or animations, and do not run simulate_state or validate_character after build_move "
+    "(its answer has both). Only for what build_move cannot do (projectiles, throws, helpers, custom "
+    "effects) write states by hand, the way the character's other moves do (mugen_guide topic "
+    "'style': helpers instead of the Projectile controller, the character's own sparks and sounds): "
+    "create_move gives a starting point, set_state(replace=true) the rest, mugen_guide explains "
+    "each part and simulate_state checks it; never tell the user a move "
+    "works while the simulation says it misses. To change a move: one made by build_move (its "
+    "statedef has a '; build_move:' comment) is changed by calling build_move again with the same "
+    "state; for others, get_move shows the statedef, animations, input and verdict in one call, "
+    "edit_state fixes parameters and edit_animation frames, timing or boxes. A new move gets new "
+    "state and animation numbers: never overwrite another move unless the user asks to change that "
+    "one. The game only sees saved files: tell the user to save before testing in MUGEN, and if "
     "they say the game still behaves the old way, check unsaved_changes in character_info first.")
 
 
@@ -756,6 +762,29 @@ def test_command(host, char, input: str | None = None, command: str | None = Non
 _MOVE_KINDS = ("normal", "crouch", "air", "special", "air_special", "super")
 
 
+def _check_input(char, command: str, pose: str, replace_input: bool, own: tuple = ()) -> None:
+    """A entrada já é de outro golpe, que vem antes no [Statedef -1]: só segue com replace_input.
+    `own`: estados do próprio golpe (refazer um golpe não briga com a entrada dele)."""
+    from ..tools import cmdtest
+    owner = cmdtest.input_owner(char, command, pose)
+    if owner is not None and owner["state"] not in own and not replace_input:
+        raise ToolError(f"nothing changed: '{command}' is already the input of [State -1, {owner['label']}] "
+                        f"(state {owner['state']}), which comes first. Pass replace_input=true if the user "
+                        "wants this move on that input instead; otherwise free inputs: "
+                        + ", ".join(cmdtest.free_inputs(char, pose=pose)))
+
+
+def _take_input(char, command: str, pose: str, own: tuple = ()) -> str | None:
+    """O golpe que tinha a entrada perde a entrada do -1 (o estado dele fica). Devolve o rótulo."""
+    from ..tools import cmdtest
+    taken = None
+    owner = cmdtest.input_owner(char, command, pose)
+    while owner is not None and owner["state"] not in own:
+        taken = char.states_file_for(-1).remove_controller(-1, owner["index"]).label
+        owner = cmdtest.input_owner(char, command, pose)
+    return taken
+
+
 @tool("Starting point for a new attack: one call writes a basic statedef (the animation plays in "
       "place, a HitDef on its first Clsn1 frame, back to stand at the end), a [Command] and its "
       "[Statedef -1] entry, placed so that normal attacks do not take the input. For anything more "
@@ -781,7 +810,7 @@ _MOVE_KINDS = ("normal", "crouch", "air", "special", "air_special", "super")
 def create_move(host, char, state: int, anim: int, kind: str, command: str, command_name: str | None = None,
                 name: str | None = None, damage: int | None = None, hit_frame: int | None = None,
                 replace_input: bool = False):
-    from ..tools import cmdtest, movegen
+    from ..tools import movegen
     if kind not in _MOVE_KINDS:
         raise ToolError(f"kind must be one of: {', '.join(_MOVE_KINDS)}")
     if state in char.all_statedefs():
@@ -801,12 +830,7 @@ def create_move(host, char, state: int, anim: int, kind: str, command: str, comm
     if -1 not in char.all_statedefs():
         raise ToolError("the character has no [Statedef -1] to put the command in")
     pose = {"crouch": "crouch", "air": "air", "air_special": "air"}.get(kind, "stand")
-    owner = cmdtest.input_owner(char, command, pose)
-    if owner is not None and not replace_input:
-        raise ToolError(f"nothing changed: '{command}' is already the input of [State -1, {owner['label']}] "
-                        f"(state {owner['state']}), which comes first. Pass replace_input=true if the user "
-                        "wants this move on that input instead; otherwise free inputs: "
-                        + ", ".join(cmdtest.free_inputs(char, pose=pose)))
+    _check_input(char, command, pose, replace_input)
     # só o super gasta barra (uma); o padrão do gerador também cobra 1000 dos especiais
     data = {"state": state, "anim": anim, "kind": kind, "name": name or f"Move {state}",
             "command_name": cmd_name, "command_seq": command, "power": 1000 if kind == "super" else 0}
@@ -814,10 +838,7 @@ def create_move(host, char, state: int, anim: int, kind: str, command: str, comm
         data["damage"] = (int(damage), max(0, int(damage) // 8))
     if hit_frame is not None:
         data["hit_elem"] = int(hit_frame)
-    taken = None
-    while owner is not None:              # o golpe que tinha a entrada perde a entrada do -1
-        taken = char.states_file_for(-1).remove_controller(-1, owner["index"]).label
-        owner = cmdtest.input_owner(char, command, pose)
+    taken = _take_input(char, command, pose)
     r = movegen.apply_move_to_character(char, data)
     out = {"state": state, "anim": anim, "command": cmd_name, "sequence": command,
            "command_added": r["command_added"], "statedef_-1_entry_added": r["minus1_added"]}
@@ -830,6 +851,138 @@ def create_move(host, char, state: int, anim: int, kind: str, command: str, comm
     if check:
         out["simulation"] = check
     out["text"] = r["cns_text"]
+    return out
+
+
+_COMBO_START = {"normal": 1000, "special": 1000, "super": 3000}
+_MISS_HINT = {
+    "strike": "its attack box does not reach the opponent: pick an animation that reaches further, "
+              "or put a dash step before it",
+    "finisher": "its attack box does not reach the opponent: pick an animation that reaches further, "
+                "or put a dash step before it",
+    "launcher": "its attack box does not reach the opponent: pick an animation that reaches further, "
+                "or put a dash step before it",
+    "air_strike": "the character does not meet the opponent in the air: pick an air attack that "
+                  "reaches further or comes out sooner",
+    "air_finisher": "the character does not meet the opponent in the air: pick an air attack that "
+                    "reaches further or comes out sooner, or add an air_strike before it",
+}
+
+
+def _free_block(char, start: int, count: int) -> int:
+    """Primeiro número (de 10 em 10) com `count` estados livres em seguida."""
+    used = set(char.all_statedefs())
+    n = start - start % 10
+    while any(n + k in used for k in range(count)):
+        n += 10
+    return n
+
+
+@tool("Build a whole move from a list of steps, without writing CNS: you choose what each step "
+      "does (its role) and its animation; the tool writes every statedef (one per step, each one "
+      "chained only if the step before it hit), the HitDefs with enough hitstun for the next step, "
+      "the launch, the jump after the opponent, the landing, the [Command] and the [Statedef -1] "
+      "entry, then tunes launch height, jump strength and timing in the simulator until every hit "
+      "connects. Use it for any new attack, from one hit to a long combo. Roles: "
+      + "; ".join(f"{k} = {v}" for k, v in combo.ROLES.items())
+      + ". Call it again with the same `state` to change the move (it replaces its own states).",
+      {"steps": {"type": "array", "description": "The steps in order, e.g. two strikes, a launcher "
+                 "and an air_finisher",
+                 "items": {"type": "object", "properties": {
+                     "role": {"type": "string", "enum": list(combo.ROLES)},
+                     "anim": _int("Action number of the pose for this step (from list_animations; a "
+                                  "jump step may leave it out)"),
+                     "damage": _int("Damage of each hit of this step (default per role and kind)"),
+                     "hits": {"type": "array", "items": {"type": "integer"},
+                              "description": "Animation elements (1 = first) where each hit starts; "
+                                             "default: each run of frames with Clsn1"}},
+                     "required": ["role"]}},
+       "command": _str("Input sequence, e.g. '~D, DF, F, x'"),
+       "kind": {"type": "string", "enum": list(combo.KINDS),
+                "description": "normal, special (default; cancels normals on contact) or super (costs "
+                               "one power bar, super pause)"},
+       "state": _int("First statedef of the move (the steps use the numbers after it); default: a "
+                     "free block from 1000 (3000 for a super)"),
+       "name": _str("Move name"),
+       "command_name": _str("Name for the new [Command] (default cmd_<state>)"),
+       "replace_input": _bool("The input belongs to another move and the user wants this one there "
+                              "instead: removes that move's [Statedef -1] entry (its state stays)")},
+      ("steps", "command"), writes=True)
+def build_move(host, char, steps: list, command: str, kind: str = "special", state: int | None = None,
+               name: str | None = None, command_name: str | None = None, replace_input: bool = False):
+    from ..tools import movegen
+    try:
+        plan = combo.plan(char, [s if isinstance(s, dict) else {} for s in steps], kind)
+    except combo.ComboError as e:
+        raise ToolError(str(e)) from None
+    defs = char.all_statedefs()
+    if state is None:
+        base = _free_block(char, _COMBO_START[kind], len(plan))
+    else:
+        base = int(state)
+        for n in range(base, base + len(plan)):
+            sd = defs.get(n)
+            if sd and combo.MARK not in sd[0].text():
+                raise ToolError(f"statedef {n} belongs to another move: pick a free number such as "
+                                f"{_free_block(char, base, len(plan))}")
+    if -1 not in defs:
+        raise ToolError("the character has no [Statedef -1] to put the command in")
+    air = plan[0].role in combo.AIR_ROLES
+    pose = "air" if air else "stand"
+    _check_input(char, command, pose, replace_input, own=(base,))
+    cmd_name = command_name or f"cmd_{base}"
+    same = char.commands.find(cmd_name)
+    if same and same[0].sequence.replace(" ", "") != command.replace(" ", ""):
+        raise ToolError(f"command '{cmd_name}' already exists with '{same[0].sequence}': pass another "
+                        "command_name")
+    try:
+        combo.place(char, plan, base, kind)
+    except combo.ComboError as e:
+        raise ToolError(str(e)) from None
+    name = name or f"Combo {base}"
+    taken = _take_input(char, command, pose, own=(base,))
+    entry_kind = {"normal": "air", "special": "air_special"}.get(kind, kind) if air else kind
+    r = movegen.apply_move_to_character(char, {
+        "state": base, "anim": plan[0].anim, "kind": entry_kind, "name": name, "command_name": cmd_name,
+        "command_seq": command, "power": 1000 if kind == "super" else 0})
+    tuned = combo.tune(char, plan, kind, name)
+    for n in combo.leftovers(char, base, len(plan)):
+        ops.remove_statedef(char, n)
+    rep = combo.run(char, plan, 50.0)
+    rows, missed = [], None
+    for k, s in enumerate(plan, 1):
+        row = {"step": k, "state": s.state, "role": s.role, "anim": s.anim}
+        if s.role in combo.HIT_ROLES:
+            t = rep.hit.get(s.state)
+            row["hit"] = f"tick {t}" if t is not None else "MISSES"
+            if t is None and missed is None:
+                missed = (k, s)
+        if s.note:
+            row["note"] = s.note
+        rows.append(row)
+    if missed is None:
+        verdict = (f"every hit connects, in order, on an opponent 50 px away ({rep.hits} hits, "
+                   f"{rep.ticks} ticks until both are idle)")
+    else:
+        k, s = missed
+        verdict = (f"step {k} ({s.role}, anim {s.anim}) MISSES on an opponent 50 px away, so the move "
+                   f"stops there: {_MISS_HINT[s.role]}")
+    works = [d for d in (30, 50, 70, 90) if all(t is not None for t in combo.run(char, plan, d).hit.values())]
+    roles = {s.role for s in plan}
+    out = {"verdict": verdict, "steps": rows, "states": [s.state for s in plan],
+           "connects_from_distances": works,
+           "tuned": {k: getattr(tuned, k) for k, role in combo.NEEDS.items() if role in roles},
+           "command": cmd_name, "sequence": command}
+    if taken:
+        out["input_taken_from"] = f"[State -1, {taken}] (entry removed; its state is still there)"
+    note = _command_note(r.get("minus1_check") or {})
+    if note:
+        out["command_check"] = note
+    errs = [i for i in validate.report(validate.validate_character(char))["issues"]
+            if i["severity"] == "error" and any(i["where"].startswith(f"[State {s.state},") or
+                                                i["where"].startswith(f"[Statedef {s.state}]") for s in plan)]
+    if errs:
+        out["problems"] = errs[:10]
     return out
 
 
@@ -1223,10 +1376,13 @@ def list_sounds(host, char):
 @tool("How MUGEN works, topic by topic, to build any move by hand: states (header, triggers, ending "
       "a move), timing (time, AnimElem, AnimTime), movement (velocities, gravity, jump math), sides "
       "(Turn, getting behind or over the opponent), hitting (HitDef, several hits), projectiles, "
-      "throws, supers, commands ([Command] syntax, [Statedef -1] order) and animation (AIR, boxes). "
-      "Read the topics a move needs before writing its statedef.",
+      "throws, supers, commands ([Command] syntax, [Statedef -1] order), animation (AIR, boxes) "
+      "and style (how most characters write moves: helpers, their own sparks and sounds, effect angles, "
+      "facing and scale). Read the "
+      "topics a move needs, and style, before writing a statedef by hand.",
       {"topic": {"type": "string", "enum": ["states", "timing", "movement", "sides", "hitting",
-                                            "projectiles", "throws", "supers", "commands", "animation"],
+                                            "projectiles", "throws", "supers", "commands", "animation",
+                                            "style"],
                  "description": "Topic to read"}}, ("topic",), needs_char=False)
 def mugen_guide(host, topic: str):
     from . import guide

@@ -68,18 +68,23 @@ A (air guard); air attacks use HA (an overhead), lows use L; pausetime = attacke
 animtype = Light/Medium/Hard/Back/Up/DiagUp; ground.type = High/Low/Trip;
 ground.velocity = x (, y) pushes the opponent (negative x = away from the attacker);
 air.velocity for an opponent in the air; fall = 1 knocks down; sparkno, sparkxy (spark position
-relative to the attacker); hitsound / guardsound = S5,0... (S = the common fightfx sounds).
+relative to the attacker); hitsound / guardsound = S1,16 (S = the character's own .snd; without
+S, the engine's fight.snd). Most characters use their own sounds and sparks: see topic style.
 Several hits: one HitDef per hit, each triggered at its own moment (AnimElem = 2, AnimElem = 4),
 and the animation needs Clsn1 on each of those frames.
 An attack box that never reaches the opponent's body whiffs: check `first_hit` in simulate_state.""",
 
     "projectiles": """\
-Projectile controller (one per shot): projanim = flying animation, projhitanim, projremanim,
-offset = x, y from the player's axis, velocity = x, y, projremovetime (-1 = until it leaves the
-screen or hits), plus the hit parameters of a HitDef (attr = S, SP; damage; guardflag; pausetime;
-ground.velocity...). Fire it on a frame: trigger1 = AnimElem = 3.
-For effects that do not hit, use Explod (anim, pos, postype = p1, bindtime, removetime) instead.
-For something with its own logic (a clone, a wave that grows), use Helper with its own statedef.""",
+Make projectiles, beams, waves, clones and anything with its own logic with a Helper, not the
+Projectile controller (helpers can move, scale, spawn effects, hit several times and be cleaned up).
+Fire it from the move: Helper with helpertype = normal, stateno = its statedef, ID, pos, postype =
+p1, facing = 1, ownpal = 1, supermovetime = 999, pausemovetime = 999, ignorehitpause = 1, on a
+frame (trigger1 = AnimElem = 3). Its statedef: type = A, movetype = A, physics = N, a VelSet to
+move it, AssertSpecial flag = noshadow, its own HitDef (pausetime = 0, N: the helper does not
+freeze, the opponent does), and DestroySelf when it hit (MoveContact), when its time is up
+(Time >= N or AnimTime = 0) or when it leaves the screen (FrontEdgeDist < -50). Read the
+character's values from the helper with `root,` (root, facing). For effects that do not hit, use
+Explod (anim, pos, postype = p1, bindtime, removetime = -2, ownpal = 1).""",
 
     "throws": """\
 A throw is a HitDef with attr = S, NT, guardflag empty, hitflag = M- (can't grab someone in the air
@@ -90,10 +95,59 @@ TargetState / TargetVelSet finish the throw. Enter it from [Statedef -1] when th
 trigger1 = p2bodydist x < 5 && (p2statetype = S || p2statetype = C) && p2movetype != H.""",
 
     "supers": """\
-A super spends power: [Statedef -1] entry with triggerall = power >= 1000 (one bar), and
-poweradd = -1000 in the header (or a PowerAdd). SuperPause (time = 30, anim, sound, darken = 1,
-p2defmul) freezes the screen for the flash at the start. attr = S, HA. Specials and supers usually
-also cancel a normal that hit: trigger2 = movecontact && stateno = [200, 699] in the -1 entry.""",
+A super spends power: [Statedef -1] entry with triggerall = power >= 1000 (one bar) and
+poweradd = -1000 in the header (-2000, -3000 for two or three bars). SuperPause at the start
+freezes the screen for the flash; most characters do the flash themselves: SuperPause anim = -1,
+sound = -1, darken = 0, time = 30, movetime = 30, unhittable = 1, plus their own flash (Explod or
+Helper) and stage darkening (BGPalFX). attr = S, HA. Specials and supers usually also cancel a
+normal that hit: trigger2 = movecontact && stateno = [200, 699] in the -1 entry. While the
+character must not be hit, NotHitBy value = SCA, time = 1 runs every tick.""",
+
+    "style": """\
+How most characters are written (measured on 260 JUS-style characters). Follow it when writing by
+hand, and copy the character's own values from one of its moves (get_move on a normal attack).
+DO
+- Helpers for projectiles, beams, clones and hit sparks (253 of 260 characters; projectiles topic).
+- HitDef with the character's own sounds (hitsound = S1,16, guardsound = S4,1: S is its own .snd)
+  and its own sparks: sparkno = -1 (or the S number it uses to turn the engine's off) and the spark
+  made by an Explod on the hit (trigger1 = MoveHit = 1, postype = p2, ownpal = 1, removetime = -2,
+  bindtime = 1, ignorehitpause = 1); guard.sparkno = S<its guard spark>.
+- HitDef values that hold: guardflag = MA (HA in the air), ground.type = High, ground.slidetime =
+  12, ground.hittime = 15, priority = 3, Hit, pausetime = 10,10 or 12,12 (0,N in helpers),
+  fall.recover = 0 on a hit that knocks down in the middle of a combo, envshake.time = 5-20.
+- Explod: postype = p1 (p2 on the opponent), ownpal = 1, removetime = -2 (or -1), bindtime = 1
+  (-1 to follow the character), removeongethit = 1, supermovetime = 999, pausemovetime = 999,
+  ignorehitpause = 1, trans = add/sub/addalpha for light and shadow, scale to size it.
+- Header: ctrl = 0, velset = 0,0 (or a step forward), sprpriority = 2, juggle = 1 on the ground
+  and 2 in the air, facep2 = 1 on ground attacks; normals gain power (poweradd = 30-100).
+- Timing: Time = N for events, AnimElem = N for hits tied to a frame, AnimTime = 0 to end; end
+  with ChangeState value = 0, ctrl = 1. EnvShake time = 5-20, ampl = -4..-8, freq = 60, phase = 90.
+- AI: [Statedef -1] entries test AILevel (trigger2 = AILevel && random < AILevel * N).
+- Numbers in the 320x240 scale (no localcoord in the .def).
+DON'T
+- Don't use the Projectile controller (only 13 of 260 characters do).
+- Don't use the engine's sparks and sounds (sparkno = 0-3, hitsound = 5,0 from fightfx/fight.snd).
+- Don't let SuperPause darken the screen or play anim 100 / sound 20,0: do the flash yourself.
+- Don't use helpertype = player (232 of 27,430 helpers).
+- Don't leave a helper alive or an effect running: every helper state ends in DestroySelf, effects
+  have removetime and removeongethit = 1.
+- Don't let effects freeze in pauses: supermovetime and pausemovetime = 999 on Explods and Helpers.
+ANGLE, SYMMETRY AND COHERENCE
+- Write angles for the character facing right: the engine mirrors them when it faces left
+  (positive = counterclockwise, the front of the sprite goes up). Never multiply an angle by facing.
+- AngleDraw lasts only the tick it runs: trigger1 = 1 (every tick), ignorehitpause = 1. To spin,
+  AngleAdd value = N every tick (or AngleSet once) plus AngleDraw with no value; its scale sizes it.
+- Facing follows postype: p1 -> facing = 1 (turns with the character), p2 -> facing = -1 (looks back
+  at the attacker), the same for Helpers. Explod facing is already relative: no facing = facing.
+- Sparks and debris vary: angle = random % 360, facing/vfacing = -1 + random % 2, and a small pos
+  jitter on multi-hits; a fixed angle only for a slash that follows the swing.
+- Same scale on both axes for sparks, auras and flashes (xscale = yscale); stretch one axis only
+  for beams and trails, along their length.
+- Keep the character's own scale system: if its Explods multiply scale by a global factor
+  (.3*Helper(999999),Fvar(16) in 12,847 of them), new effects use the same factor.
+- One move, one look: the hit effect sits on the attack box (postype p2, pos at the Clsn1 height),
+  hits of the same weight share spark and size, the finisher is bigger; ModifyExplod (pos, scale,
+  angle) animates one effect instead of stacking many; auras on a helper use BindToRoot.""",
 
     "commands": """\
 [Command] name = "...", command = sequence, time = ticks to enter it. Symbols: D, F, B, U and the

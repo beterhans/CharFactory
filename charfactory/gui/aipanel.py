@@ -296,6 +296,7 @@ def _step_label(name: str, args: dict) -> str:
         "add_command": lambda: tr("Added command {0}").format(a.get("name", "")),
         "test_command": lambda: tr("Tested the input {0}").format(a.get("input") or a.get("command") or ""),
         "create_move": lambda: tr("Created move {0}").format(n),
+        "build_move": lambda: tr("Built a move in {0} steps").format(len(a.get("steps") or [])),
         "list_animations": lambda: tr("Listed the animations"),
         "view_animations": lambda: tr("Looked at animations {0}").format(", ".join(map(str, a.get("numbers", [])[:8]))),
         "get_animation": lambda: tr("Read animation {0}").format(n),

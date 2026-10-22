@@ -1,6 +1,8 @@
 """Canvas de sprites/animações com zoom, eixo e edição de caixas Clsn."""
 from __future__ import annotations
 
+import math
+
 from PIL import Image
 from PySide6.QtCore import QPoint, QPointF, QRectF, Qt, Signal
 from PySide6.QtGui import QColor, QImage, QLinearGradient, QPainter, QPen, QPolygonF
@@ -29,6 +31,7 @@ class SpriteCanvas(QWidget):
     nudged = Signal(int, int)               # setas do teclado (Shift = 10 px)
     doubleClicked = Signal()                # duplo clique no sprite (o editor de sprites abre a edição)
     drawModeExit = Signal()                 # Esc com a ferramenta de caixa ligada
+    pixelPicked = Signal(int, int)          # clique num pixel da imagem (com pick_pixel ligado)
 
     HANDLE = 5
 
@@ -48,6 +51,7 @@ class SpriteCanvas(QWidget):
         self.boxes: list[list] = []     # [[tipo(1|2), [x1,y1,x2,y2]], ...]
         self.edit_boxes = False
         self.pick_axis = False
+        self.pick_pixel = False         # clique emite pixelPicked (conta-gotas do editor de paletas)
         self.new_box_kind = 2
         self.draw_box_kind: int | None = None   # ferramenta de caixa ligada: arrastar desenha uma nova
         self.selected: int | None = None
@@ -378,6 +382,13 @@ class SpriteCanvas(QWidget):
             self._pan_start = (pos, QPointF(self.pan))
             return
         if e.button() != Qt.MouseButton.LeftButton:
+            return
+        if self.pick_pixel and self.image is not None:
+            o = self.origin()
+            x = math.floor((pos.x() - o.x()) / self.zoom) - self.image_pos.x()
+            y = math.floor((pos.y() - o.y()) / self.zoom) - self.image_pos.y()
+            if 0 <= x < self.image.width() and 0 <= y < self.image.height():
+                self.pixelPicked.emit(x, y)
             return
         if self.pick_axis and self.image is not None:
             x, y = self.to_char(pos)

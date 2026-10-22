@@ -154,13 +154,14 @@ def detect_grid(mask: np.ndarray, cell_width: int | None = None, cell_height: in
 # ------------------------------------------------------------------ eixo
 
 def compute_axes(slices: list[Slice], mask: np.ndarray, mode: str = "feet", feet_band: int = 6) -> None:
-    """mode: 'feet' (centro dos pés + chão da fileira), 'bottom-center', 'center', 'row-feet'."""
+    """mode: 'feet' (centro dos pés + chão da fileira), 'bottom-center', 'center', 'row-feet'.
+    Recortes com o eixo vindo da grade ou posto à mão ficam como estão."""
     # no MUGEN o eixo Y fica na última linha de pixels que toca o chão (ex.: altura 106, eixo 105)
     baseline = {}
     for s in slices:
         baseline[s.row] = max(baseline.get(s.row, 0), s.bottom - 1)
     for s in slices:
-        if s.extra.get("grid_axis"):
+        if s.extra.get("grid_axis") or s.extra.get("manual_axis"):
             continue
         sub = mask[s.top:s.bottom, s.left:s.right]
         w, h = s.size
@@ -214,12 +215,25 @@ def to_indexed(crop: Image.Image, palette: list[tuple]) -> Image.Image:
 
 # ------------------------------------------------------------------ principal
 
-def slice_sheet(image_path: str | Path, out_dir: str | Path, group: int = 0, start_item: int = 0,
-                mode: str = "auto", bg_color=None, tolerance: int = 8,
-                ignore_colors: list | None = None, merge_distance: int = 4, min_area: int = 12,
-                axis_mode: str = "feet", max_colors: int = 256, group_per_row: bool = False,
-                palette: list[tuple] | None = None, **grid) -> dict:
-    """Recorta a sheet e grava <out_dir>/<grupo>-<nº>.png + sprites.csv + preview.png."""
+@dataclass
+class Detection:
+    """O que a detecção achou na sheet; os recortes podem ser editados antes de exportar."""
+    rgba: Image.Image
+    mask: np.ndarray
+    slices: list[Slice]
+    info: dict
+
+    def clean(self) -> Image.Image:
+        """A sheet com o fundo zerado (transparente)."""
+        a = np.asarray(self.rgba).copy()
+        a[~self.mask] = 0
+        return Image.fromarray(a, "RGBA")
+
+
+def detect(image_path: str | Path, mode: str = "auto", bg_color=None, tolerance: int = 8,
+           ignore_colors: list | None = None, merge_distance: int = 4, min_area: int = 12,
+           axis_mode: str = "feet", **grid) -> Detection:
+    """Acha o fundo e os recortes, sem gravar nada."""
     src = Image.open(image_path)
     src.load()
     rgba = src.convert("RGBA")
@@ -231,12 +245,47 @@ def slice_sheet(image_path: str | Path, out_dir: str | Path, group: int = 0, sta
     if not slices:
         raise ValueError(tr("no sprite found (adjust bg_color/tolerance/min_area)"))
     compute_axes(slices, mask, axis_mode)
+    return Detection(rgba, mask, slices, info)
 
-    # recortes RGBA com o fundo zerado
-    clean = np.asarray(rgba).copy()
-    clean[~mask] = 0
-    clean_img = Image.fromarray(clean, "RGBA")
-    crops = [clean_img.crop((s.left, s.top, s.right, s.bottom)) for s in slices]
+
+def reorder(slices: list[Slice]) -> list[Slice]:
+    """Ordem de leitura depois de editar: fileiras de cima para baixo, cada uma da esquerda
+    para a direita (o eixo absoluto de cada recorte não muda)."""
+    return _order_rows(list(slices))
+
+
+def number(slices: list[Slice], group: int = 0, start_item: int = 0, group_per_row: bool = False) -> None:
+    """Grupo e número de cada recorte na ordem da lista."""
+    item, row_prev = start_item, None
+    g = group
+    for s in slices:
+        if group_per_row:
+            if row_prev is not None and s.row != row_prev:
+                g, item = g + 1, start_item
+            row_prev = s.row
+        s.group, s.item = g, item
+        s.file = f"{g}-{item}.png"
+        item += 1
+
+
+def export(det: Detection, out_dir: str | Path, max_colors: int = 256,
+           palette: list[tuple] | None = None) -> dict:
+    """Grava cada recorte (aparado ao que não é fundo) + sprites.csv + preview.png."""
+    clean_img = det.clean()
+    slices, crops = [], []
+    for s in det.slices:
+        crop = clean_img.crop((s.left, s.top, s.right, s.bottom))
+        box = crop.getbbox()
+        if not box:
+            continue  # caixa só com fundo
+        if box != (0, 0, crop.width, crop.height):
+            crop = crop.crop(box)
+            s = Slice(s.left + box[0], s.top + box[1], s.left + box[2], s.top + box[3], s.row,
+                      s.axis_x - box[0], s.axis_y - box[1], s.group, s.item, s.file, dict(s.extra))
+        slices.append(s)
+        crops.append(crop)
+    if not slices:
+        raise ValueError(tr("no sprite found (adjust bg_color/tolerance/min_area)"))
     pal, exact = (palette, False) if palette else shared_palette(crops, max_colors)
     if palette:
         exact = all(tuple(c) in set(map(tuple, palette)) for im in crops
@@ -244,30 +293,33 @@ def slice_sheet(image_path: str | Path, out_dir: str | Path, group: int = 0, sta
 
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
-    item, row_prev = start_item, None
-    g = group
     for s, crop in zip(slices, crops):
-        if group_per_row:
-            if row_prev is not None and s.row != row_prev:
-                g, item = g + 1, start_item
-            row_prev = s.row
-        s.group, s.item = g, item
-        s.file = f"{g}-{item}.png"
         to_indexed(crop, pal).save(out / s.file, transparency=0)
-        item += 1
     with open(out / "sprites.csv", "w", newline="", encoding="utf-8") as f:
         w = csv.writer(f)
         w.writerow(["group", "item", "file", "axis_x", "axis_y"])
         for s in slices:
             w.writerow([s.group, s.item, s.file, s.axis_x, s.axis_y])
-    preview = render_preview(rgba, slices)
+    preview = render_preview(det.rgba, slices)
     preview.save(out / "preview.png")
-    big = [s.info() for s in slices if s.size[0] * s.size[1] > 0.5 * mask.size]
-    return {"count": len(slices), "rows": max(s.row for s in slices) + 1, **info,
+    big = [s.info() for s in slices if s.size[0] * s.size[1] > 0.5 * det.mask.size]
+    return {"count": len(slices), "rows": max(s.row for s in slices) + 1, **det.info,
             "palette_colors": len(pal), "palette_exact": exact, "dir": str(out),
             "csv": str(out / "sprites.csv"), "preview": str(out / "preview.png"),
             "warnings": ([tr("a cut takes more than half the image: the background may be wrong or there are grid lines (use ignore_colors or mode='grid')")] if big else []),
             "sprites": [s.info() for s in slices]}
+
+
+def slice_sheet(image_path: str | Path, out_dir: str | Path, group: int = 0, start_item: int = 0,
+                mode: str = "auto", bg_color=None, tolerance: int = 8,
+                ignore_colors: list | None = None, merge_distance: int = 4, min_area: int = 12,
+                axis_mode: str = "feet", max_colors: int = 256, group_per_row: bool = False,
+                palette: list[tuple] | None = None, **grid) -> dict:
+    """Recorta a sheet e grava <out_dir>/<grupo>-<nº>.png + sprites.csv + preview.png."""
+    det = detect(image_path, mode, bg_color, tolerance, ignore_colors, merge_distance, min_area,
+                 axis_mode, **grid)
+    number(det.slices, group, start_item, group_per_row)
+    return export(det, out_dir, max_colors, palette)
 
 
 def render_preview(rgba: Image.Image, slices: list[Slice], max_side: int = 1400) -> Image.Image:

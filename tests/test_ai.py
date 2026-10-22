@@ -494,6 +494,61 @@ def test_agent_stops_when_cancelled(host, monkeypatch):
     assert a.messages[-1]["content"][0]["type"] == "tool_result"           # a chamada teve resultado
 
 
+def test_gemini_thinks_low_and_drops_the_level_on_models_without_it(host, monkeypatch):
+    done = {"candidates": [{"content": {"role": "model", "parts": [{"text": "ok"}]}}]}
+    script = Script(done)
+    monkeypatch.setattr(providers, "_request", script)
+    p = providers.make("gemini", "k", "gemini-x")
+    agent.Agent(p, host).send("hi")
+    assert script.requests[0][2]["generationConfig"] == {"thinkingConfig": {"thinkingLevel": "low"}}
+    sent = []
+
+    def old_model(url, headers, body=None, method=None):
+        sent.append(json.loads(json.dumps(body)))
+        if "generationConfig" in body:
+            raise providers.ProviderError("HTTP 400: Thinking level is not supported for this model.", 400)
+        return done
+    monkeypatch.setattr(providers, "_request", old_model)
+    agent.Agent(p, host).send("hi")
+    agent.Agent(p, host).send("again")
+    assert ["generationConfig" in b for b in sent] == [True, False, False]   # tenta uma vez só
+
+
+def test_images_already_seen_are_not_sent_again():
+    calls = [(providers.Call("c", "view_animations", {}), tools.Result("rows: 200", [b"png"]))]
+    g, msgs = providers.make("gemini", "k"), []
+    g.add_results(msgs, calls)
+    g.add_results(msgs, calls)
+    g.forget_images(msgs)
+    assert [len(m["parts"]) for m in msgs] == [1, 2]                  # só a última leva fica com a imagem
+    assert msgs[0]["parts"][0]["functionResponse"]["response"] == {"result": "rows: 200"}
+    o, msgs = providers.make("openai", "k"), []
+    o.add_results(msgs, calls)
+    o.add_results(msgs, calls)
+    o.forget_images(msgs)
+    assert "already seen" in msgs[1]["content"] and isinstance(msgs[3]["content"], list)
+    a, msgs = providers.make("anthropic", "k"), []                     # no cache: fica como está
+    a.add_results(msgs, calls)
+    a.add_results(msgs, calls)
+    a.forget_images(msgs)
+    assert all(m["content"][0]["content"][1]["type"] == "image" for m in msgs)
+
+
+def test_a_long_run_of_reads_gets_a_reminder_to_act(host, monkeypatch):
+    read = {"stop_reason": "tool_use", "content": [{"type": "tool_use", "id": "t", "name": "list_states", "input": {}}]}
+    monkeypatch.setattr(providers, "_request", Script(*[read] * agent.READS_BEFORE_NUDGE,
+                                                      {"stop_reason": "end_turn", "content": []}))
+    a = agent.Agent(providers.make("anthropic", "k"), host)
+    a.send("x")
+    texts = [m["content"][0]["content"][0]["text"] for m in a.messages[2::2]]
+    assert len(texts) == agent.READS_BEFORE_NUDGE
+    assert "read-only calls in a row" in texts[-1] and not any("read-only" in t for t in texts[:-1])
+
+
+def test_the_editor_note_is_only_for_when_the_user_points_at_it():
+    assert "only when the user refers to it" in agent.SYSTEM and "build_move" in agent.SYSTEM
+
+
 def test_http_errors_show_the_provider_message(monkeypatch):
     def fail(req, timeout):
         raise urllib.error.HTTPError(req.full_url, 401, "Unauthorized", {},

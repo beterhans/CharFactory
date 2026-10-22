@@ -54,6 +54,14 @@ def test_open_loads_only_the_visible_code_page(gui):
     # quem precisa do texto (Problemas, busca) carrega a página na hora
     win.goto_code("kfm.cmd", "[Statedef -1]")
     assert win.current_page() is win.cmds and win.cmds.files
+    # vários personagens: um botão com o atual (+N outros) e a lista num menu, no lugar das abas
+    assert win.project_switcher.text().startswith("Kung Fu Man") and "+1" in win.project_switcher.text()
+    win._fill_project_menu()
+    chars = [a for a in win.project_menu.actions() if a.isCheckable()]
+    assert len(chars) == 2 and chars[1].isChecked() and not chars[0].isChecked()
+    chars[0].trigger()
+    app.processEvents()
+    assert ctx.char is ctx.projects[0]
     for c in list(ctx.projects):
         c.dirty.clear()
 
@@ -111,6 +119,89 @@ def test_sprite_axis_and_palette_variant(gui):
     adv.hue.setValue(120)
     adv.make_variant()
     assert ctx.char.sprites.find_palette(1, 9) >= 0
+
+
+def test_palette_changes_show_live(gui, monkeypatch):
+    from PySide6.QtGui import QColor
+    from PySide6.QtWidgets import QColorDialog
+
+    from charfactory.gui.editors.palettes import PaletteEditor
+    app, ctx, win, _ = gui
+    ed = PaletteEditor(ctx)
+    ed.load()
+    before = list(ed.current_palette().colors)
+    shown = ed.preview.image.copy()
+    # matiz/saturação/brilho: a prévia mostra a variante antes de gravar e o modelo fica igual
+    ed.tabs.setCurrentIndex(ed.TAB_NEW)                          # a variante aparece na aba Nova paleta
+    ed.hue.setValue(90)
+    assert ed.preview.image != shown and ed.current_palette().colors == before
+    assert not ed.preview_note.isHidden()
+    target = ed.target.value()
+    assert ctx.char.sprites.find_palette(1, target) < 0          # vem numa paleta livre
+    ed.make_variant()
+    app.processEvents()
+    assert ed.current_slot() == target and ed.hue.value() == 0   # a nova aparece, controles zeram
+
+    # editar uma cor repinta a cada escolha; Cancelar volta como estava
+    ed.select_slot(1)
+    seen = []
+
+    def cancel(dlg):
+        dlg.currentColorChanged.emit(QColor(1, 2, 3))
+        seen.append((ed.current_palette().colors[5], ed.preview.image.copy()))
+        return 0
+    monkeypatch.setattr(QColorDialog, "exec", cancel)
+    ed.edit_color(5)
+    assert seen[0][0] == (1, 2, 3) and ed.current_palette().colors[5] == before[5]
+
+    def choose(dlg):
+        dlg.setCurrentColor(QColor(10, 20, 30))
+        dlg.accept()
+        return 1
+    monkeypatch.setattr(QColorDialog, "exec", choose)
+    ed.edit_color(5)
+    app.processEvents()
+    assert ed.current_palette().colors[5] == (10, 20, 30)
+
+    # conta-gotas: clicar no sprite seleciona o índice do pixel
+    spr = ctx.char.sprites.find(*ed.preview_sprite.currentData())
+    px = ctx.char.sprites.pixels(spr)
+    k = next(i for i, v in enumerate(px) if v)
+    ed.pick_from_preview(k % spr.width, k // spr.width)
+    assert ed.grid.sel == (px[k], px[k])
+    ed.deleteLater()
+
+    # desfazer dentro do editor (janela modal: o Ctrl+Z da principal não chega lá)
+    ed = PaletteEditor(ctx)
+    ed.load()
+    orig = list(ed.current_palette().colors)
+    assert not ed.revert_btn.isEnabled()
+    ed.effect("grayscale")
+    app.processEvents()
+    assert ed.current_palette().colors != orig and ed.undo_btn.isEnabled()
+    ed.undo()
+    app.processEvents()
+    assert ed.current_palette().colors == orig and ed.redo_btn.isEnabled()
+    ed.redo()
+    app.processEvents()
+    gray = list(ed.current_palette().colors)
+    assert gray != orig
+    ed.effect("invert")
+    app.processEvents()
+    ed.revert()                                  # tudo como ao abrir, numa vez só…
+    app.processEvents()
+    assert ed.current_palette().colors == orig and not ed.revert_btn.isEnabled()
+    ed.undo()                                    # …e a volta também se desfaz
+    app.processEvents()
+    assert ed.current_palette().colors != orig
+    ed.deleteLater()
+
+    # painel do editor de sprites: escolher outra paleta mostra o sprite com ela (antes voltava)
+    sp = win.sprites
+    sp.select(0, 0)
+    assert sp.use_sprite_pal.isChecked()
+    sp.pal_nav.set_index(2)
+    assert not sp.use_sprite_pal.isChecked() and sp.palette_key() == sp.char_palettes()[2].item
 
 
 def test_theme_import_colorset_and_roundtrip(tmp_path, monkeypatch):
@@ -188,18 +279,114 @@ def test_go_to_definition_palette_and_panels(gui):
     assert not win.bottom.isVisible()
 
 
-def test_drop_images_become_sprites(gui, tmp_path):
+def test_drop_images_become_sprites(gui, tmp_path, monkeypatch):
     app, ctx, win, _ = gui
     from PIL import Image
+
+    from charfactory.gui.spriteimport import ImportSpritesDialog
     p = tmp_path / "novo.png"
     Image.new("RGBA", (20, 30), (200, 40, 40, 255)).save(p)
     win.show_page(win.sprites)
     win.sprites.select(0, 0)
     before = len(ctx.char.sprites.sprites)
+    # soltar imagens abre a janela de importar (aqui: Importar direto, com o que ela sugere)
+    monkeypatch.setattr(ImportSpritesDialog, "exec", lambda dlg: (dlg.do_import(), dlg.result is not None)[1])
     win.import_dropped_images([p])
     assert len(ctx.char.sprites.sprites) == before + 1
     cur = win.sprites.current()
     assert cur.group == 0 and cur.width == 20
+
+
+def test_sheet_slicer_edits_boxes_in_the_preview(gui, tmp_path):
+    """Recorte de sheet: as caixas detectadas se movem, ganham uma nova e perdem uma na prévia,
+    o eixo arrastado fica, Ctrl+Z volta, e o que se importa é o que está na tela."""
+    from PIL import Image
+    from PySide6.QtCore import QPoint, QPointF, Qt
+    from PySide6.QtTest import QTest
+
+    from charfactory.gui.sheetslicer import SheetDialog
+    app, ctx, win, _ = gui
+    img = Image.new("RGB", (200, 100), (255, 255, 255))
+    px = img.load()
+    for x0, color in ((20, (200, 0, 0)), (100, (0, 150, 0))):
+        for x in range(x0, x0 + 30):
+            for y in range(30, 80):
+                px[x, y] = color
+    for x in range(160, 180):                # terceiro sprite, mais baixo
+        for y in range(60, 80):
+            px[x, y] = (0, 0, 200)
+    p = tmp_path / "sheet.png"
+    img.save(p)
+    dlg = SheetDialog(ctx)
+    dlg.resize(1100, 700)
+    dlg.show()
+    dlg.group.setValue(7300)
+    dlg.path.setText(str(p))
+    assert dlg.detect_now(force=True)
+    v = dlg.view
+    v.fit()
+    assert [(s.group, s.item) for s in v.slices] == [(7300, 0), (7300, 1), (7300, 2)]
+    # arrasta a 2ª caixa 10 px de imagem para a direita
+    c = v._srect(v.slices[1]).center()
+    to = c + QPointF(10 * v.zoom, 0)
+    QTest.mousePress(v, Qt.MouseButton.LeftButton, pos=c.toPoint())
+    QTest.mouseMove(v, to.toPoint())
+    QTest.mouseRelease(v, Qt.MouseButton.LeftButton, pos=to.toPoint())
+    assert v.slices[1].left == 110 and dlg.edited
+    dlg.undo()
+    assert v.slices[1].left == 100
+    # apaga a 3ª e eixo manual na 1ª
+    v.select(2)
+    QTest.keyClick(v, Qt.Key.Key_Delete)
+    assert len(v.slices) == 2
+    v.select(0)
+    a = v._saxis(v.slices[0]).toPoint()
+    up = a + QPoint(0, -round(20 * v.zoom))
+    QTest.mousePress(v, Qt.MouseButton.LeftButton, pos=a)
+    QTest.mouseMove(v, up)
+    QTest.mouseRelease(v, Qt.MouseButton.LeftButton, pos=up)
+    assert v.slices[0].axis_y == 29 and v.slices[0].extra.get("manual_axis")
+    dlg.axis.setCurrentIndex(dlg.axis.findData("center"))   # o eixo manual não muda
+    assert v.slices[0].axis_y == 29 and v.slices[1].axis_y == 25
+    # mudar a tolerância não desfaz as edições
+    dlg.tol.setValue(20)
+    dlg.detect_now()
+    assert len(v.slices) == 2
+    dlg.run_import()
+    s = ctx.char.sprites
+    assert s.find(7300, 0).axis_y == 29 and s.find(7300, 1) is not None and s.find(7300, 2) is None
+    ctx.char.dirty.clear()
+
+
+def test_import_dialog_modes_preview_and_background(gui, tmp_path):
+    """A janela de importar: paleta do personagem avisa quando as cores mudam muito; paleta
+    própria guarda as cores com o fundo no índice 0; cores reais não reduzem nada."""
+    import numpy as np
+    from PIL import Image
+
+    from charfactory.gui.spriteimport import ImportSpritesDialog
+    app, ctx, win, _ = gui
+    a = np.zeros((40, 30, 3), np.uint8)
+    a[:] = (0, 255, 0)                                  # fundo verde
+    a[5:35, 8:22] = (40, 200, 255)                      # azul-claro: longe das cores do kfm
+    p = tmp_path / "efeito.png"
+    Image.fromarray(a, "RGB").save(p)
+    dlg = ImportSpritesDialog(ctx, [str(p)], 7200, 0)
+    dlg.r_char.setChecked(True)
+    dlg.update_preview()
+    assert "change a lot" in dlg.info.text()
+    dlg.r_own.setChecked(True)
+    assert "fits in one palette" in dlg.info.text() and not dlg.strip.isHidden()
+    dlg.r_true.setChecked(True)
+    assert "kept as they are" in dlg.info.text() and not dlg.dither.isEnabled()
+    dlg.r_own.setChecked(True)
+    dlg.do_import()
+    s = ctx.char.sprites
+    spr = s.find(7200, 0)
+    assert dlg.result and spr is not None and s.palettes[spr.palette_index].colors[:2] == [(0, 255, 0), (40, 200, 255)]
+    assert ctx.settings["sprite_import"]["mode"] == "own"     # a próxima abre igual
+    dlg.deleteLater()
+    ctx.char.dirty.clear()
 
 
 def test_air_transparency_blends_in_canvas(gui):
@@ -294,11 +481,18 @@ def test_states_tree_modes_and_anim_preview(gui):
     # tudo fechado ao abrir o personagem, e a prévia (painel direito) também começa fechada
     assert not any(page.tree.topLevelItem(k).isExpanded() for k in range(page.tree.topLevelItemCount()))
     assert not page.preview_section.is_open()
-    page.set_view_mode("flat")
-    tops = [page.tree.topLevelItem(k).text(0) for k in range(page.tree.topLevelItemCount())]
-    assert any(t.startswith("1000 ") for t in tops) and "Especiais" not in tops
-    assert ctx.settings["states_view"] == "flat"
+    # Clássico: todos os estados por número; a escolha fica à vista
+    assert [page.view_combo.itemData(k) for k in range(page.view_combo.count())] == ["grouped", "classic"]
+    page.view_combo.setCurrentIndex(page.view_combo.findData("classic"))
+    page.view_combo.activated.emit(page.view_combo.currentIndex())
+    nums = [int(page.tree.topLevelItem(k).text(0).split()[0]) for k in range(page.tree.topLevelItemCount())
+            if page.tree.topLevelItem(k).text(0).split()[0].lstrip("-").isdigit()]
+    assert ctx.settings["states_view"] == "classic" and nums == sorted(nums) and len(nums) > 20
+    assert "Specials" not in [page.tree.topLevelItem(k).text(0) for k in range(page.tree.topLevelItemCount())]
+    ctx.settings["states_view"] = "flat"                    # quem tinha a antiga "ordem do arquivo"
+    assert page.view_mode() == "classic"
     page.set_view_mode("grouped")
+    assert page.view_combo.currentData() == "grouped"
     # cursor dentro do [Statedef 200] -> prévia toca a anim 200
     ed = page.current_edit()
     ln = next(i for i, l in enumerate(ed.toPlainText().split("\n"), 1) if l.strip().lower().startswith("[statedef 200]"))
@@ -607,7 +801,7 @@ def test_closed_editors_stop_listening(gui, monkeypatch, mugen_dir):
     app.processEvents()
     win.sprites.delete()
     flush()
-    assert ctx.char.sprites.find(*key) is None and ed.preview_sprite.findData(key) < 0
+    assert ctx.char.sprites.find(*key) is None and ed._find_sprite(key) < 0
     ed.deleteLater()
 
     stage = next(iter(sorted((mugen_dir / "stages").glob("*.def"))), None)
@@ -662,7 +856,7 @@ def test_mouse_on_axis_palette_wave_trees_and_timeline(gui, monkeypatch):
     s = grid._cell()
     QTest.mouseClick(grid, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, QPoint(int(5.5 * s), int(s / 2)))
     assert grid.sel == (5, 5)
-    monkeypatch.setattr(QColorDialog, "getColor", lambda *a, **k: QColor(1, 2, 3))
+    monkeypatch.setattr(QColorDialog, "exec", lambda dlg: (dlg.setCurrentColor(QColor(1, 2, 3)), dlg.accept(), 1)[-1])
     QTest.mouseDClick(grid, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, QPoint(int(5.5 * s), int(s / 2)))
     pal = ctx.char.sprites.palettes[ctx.char.sprites.find_palette(1, sp.selected_palette_slot())]
     assert tuple(pal.colors[5][:3]) == (1, 2, 3)
@@ -989,7 +1183,7 @@ def test_simplified_layout_menus_and_problems_panel(gui):
     # sem faixa de projeto, sem cabeçalho do painel esquerdo e sem aba de arquivo única
     win.show_page(win.sprites)
     app.processEvents()
-    assert win.project_tabs.isVisible() and win.extra.isVisible()
+    assert win.project_switcher.isVisible() and win.extra.isVisible()
     assert not win.sprites.left.header.isVisible() and not win.sprites.file_tab.isVisible()
     assert win.states.tabs.tabBarAutoHide()
     # um menu de editor por vez, antes de Ferramentas; os outros seguem na paleta de comandos
@@ -999,7 +1193,7 @@ def test_simplified_layout_menus_and_problems_panel(gui):
     titles = [a.text().replace("&", "") for a in win.menuBar().actions()]
     assert "States" in titles and "Sprites" not in titles
     labels = [e[0] for e in win.palette_entries()]
-    assert any(lb.startswith("Sprites › Advanced palette editor") for lb in labels)
+    assert any(lb.startswith("Sprites › Palette editor") for lb in labels)
     assert any(lb.startswith("View › Sprites") for lb in labels)
     # ferramentas raras no menu '⋯' da faixa, com nome e atalho, e o atalho continua valendo
     tools = win.sprites.tools
@@ -1034,7 +1228,7 @@ def test_simplified_layout_menus_and_problems_panel(gui):
             x["edit"].document().setModified(False)
     win.close_project()
     app.processEvents()
-    assert not win.project_tabs.isVisible() and not any(a.isVisible() for a in win.editor_actions)
+    assert not win.project_switcher.isVisible() and not any(a.isVisible() for a in win.editor_actions)
 
 
 def test_simulator_chain_field_runs_a_combo(gui):
@@ -1087,25 +1281,165 @@ def test_simulator_compares_with_a_backup_side_by_side(gui):
     assert sp.sim_b is None and not sp.view_b.isVisible()
 
 
-def test_palettes12_dialog_generates_and_writes(gui, monkeypatch):
-    from charfactory.gui import palettes12 as G
+def test_palette_editor_generates_the_12_palettes(gui, monkeypatch):
+    """As 12 paletas por faixas ficam numa aba do editor de paletas: gerar, ajustar uma faixa numa
+    paleta (na hora, com Desfazer) e o lugar vazio da tira levando à aba Nova paleta."""
+    from PySide6.QtCore import Qt
+    from PySide6.QtWidgets import QDialog, QMessageBox
+
+    from charfactory.gui.editors.palettes import PaletteEditor
     app, ctx, win, _ = gui
-    dlg = G.PaletteSetDialog(ctx, win)
-    assert dlg.strip.count() == 12 and dlg.faixas.topLevelItemCount() == len(dlg.rngs)
-    dlg.generate()
-    assert dlg.touched == set(range(2, 13))
-    dlg.strip.setCurrentRow(3)                                  # paleta 4
-    free = next(k for k in range(dlg.faixas.topLevelItemCount())
-                if dlg.faixas.topLevelItem(k).checkState(2) == G.Qt.CheckState.Unchecked)
-    dlg.faixas.setCurrentItem(dlg.faixas.topLevelItem(free))
-    dlg.bm.setValue(0.5)                                        # ajuste fino: só essa faixa na 4
-    assert dlg.adj[4][free][2] == 0.5
-    monkeypatch.setattr(G.QMessageBox, "question", lambda *a, **k: G.QMessageBox.StandardButton.Yes)
-    dlg.accept()
+    ed = PaletteEditor(ctx)
+    ed.load()
+    sff = lambda: ctx.char.sprites                               # o Desfazer troca o objeto
+    assert ed.strip.count() == 12 and ed.bands.topLevelItemCount() == len(ed.rngs) > 0
+    monkeypatch.setattr(QMessageBox, "question", lambda *a, **k: QMessageBox.StandardButton.Yes)
+    ed.tabs.setCurrentIndex(ed.TAB_SET)
+    ed.generate()
+    app.processEvents()
+    assert all(sff().find_palette(1, n) >= 0 for n in range(2, 13)) and ed.current_slot() == 2
+    assert ctx.undo() and sff().find_palette(1, 12) < 0               # gerar é um passo só
+    assert ctx.redo()
+    app.processEvents()
+
+    ed.select_slot(4)
+    free = next(k for k in range(ed.bands.topLevelItemCount())
+                if ed.bands.topLevelItem(k).checkState(2) == Qt.CheckState.Unchecked)
+    ed.bands.setCurrentItem(ed.bands.topLevelItem(free))
+    i = next(x for x in ed.rngs[free]["indices"] if any(sff().palettes[sff().find_palette(1, 4)].colors[x]))
+    pal = lambda n: sff().palettes[sff().find_palette(1, n)].colors
+    before4, before5 = pal(4)[i], list(pal(5))
+    ed.bm.setValue(40)                                            # só essa faixa, só na paleta 4
+    ed.bm.setValue(30)
+    app.processEvents()
+    assert pal(4)[i] != before4 and pal(5) == before5
+    assert ctx.undo() and pal(4)[i] == before4                    # o arraste todo volta de uma vez
+    app.processEvents()
+
+    ed.select_slot(12)
+    ed.delete_palette()
+    app.processEvents()
+    assert sff().find_palette(1, 12) < 0
+    ed.select_slot(12)                                            # vazio: vai criar nele
+    assert ed.tabs.currentIndex() == ed.TAB_NEW and ed.target.value() == 12
+    ed.deleteLater()
+
+    # o painel de paletas do editor de sprites abre o mesmo editor, na aba pedida
+    opened = []
+    monkeypatch.setattr(QDialog, "exec", lambda dlg: opened.append(dlg.findChild(PaletteEditor).tabs.currentIndex()) or 0)
+    win.sprites.open_palettes12()
+    win.sprites.new_palette()
+    win.sprites.open_advanced()
+    assert opened == [PaletteEditor.TAB_SET, PaletteEditor.TAB_NEW, PaletteEditor.TAB_COLORS]
+
+
+def test_palette_editor_opens_on_the_sprite_and_its_palette(gui, monkeypatch):
+    """O editor de paletas abre sempre no sprite da tela e na paleta padrão dele (mesmo com outra
+    escolhida no painel); um efeito com paleta própria abre nela; na página de animações, no
+    sprite do frame."""
+    from PySide6.QtWidgets import QDialog
+
+    from charfactory.gui.editors.palettes import PaletteEditor
+    app, ctx, win, _ = gui
+    sp = win.sprites
+    win.show_page(sp)
+    seen = []
+
+    def grab(dlg):
+        ed = dlg.findChild(PaletteEditor)
+        seen.append((ed.current_slot(), ed.preview_sprite.currentData(), ed.tabs.isTabEnabled(ed.TAB_SET)))
+        return 0
+    monkeypatch.setattr(QDialog, "exec", grab)
+    sp.select(200, 1)
+    sp.pal_nav.set_index(2)                       # paleta 3 escolhida no painel
+    sp.open_advanced()
+    sp.use_sprite_pal.setChecked(True)
+    sp.select(9000, 1)                            # retrato: paleta própria 9000,1
+    app.processEvents()
+    sp.open_advanced()
+    assert seen[0] == (1, (200, 1), True)
+    assert seen[1] == ((9000, 1), (9000, 1), False)
+    win.show_page(win.anims)
+    f = win.anims.frame()
+    win.open_palette_editor()
+    assert seen[2][1] == (f.group, f.item)
+
+
+def test_all_palettes_list_and_color_effects(gui):
+    """Painel Paletas › Todas as paletas do SFF: o slider passa por todas (como no FFS); escolher
+    uma leva a um sprite que a usa e a grade edita ela. No editor de paletas, Azul → Vermelho
+    muda só os tons azuis e é um passo do Desfazer."""
+    from charfactory.gui.editors.palettes import PaletteEditor
+    app, ctx, win, _ = gui
+    sp = win.sprites
+    win.show_page(sp)
     s = ctx.char.sprites
-    i = dlg.rngs[free]["indices"][0]
-    assert s.palettes[s.find_palette(1, 4)].colors[i] == tuple(dlg.colors(4)[i])
-    assert ctx.undo()                                           # Ctrl+Z volta as paletas
+    sp.pal_scope.setCurrentIndex(sp.pal_scope.findData("all"))
+    assert str(len(s.palettes)) in sp.pal_scope.currentText() and sp.pal_nav.count == len(s.palettes)
+    k = s.find_palette(9000, 1)
+    sp.pal_nav.set_index(k)
+    assert sp.current().palette_index == k and sp.palette_key() == (9000, 1, k)
+    assert "9000,1" in sp.pal_label.text()
+    sp.select(0, 0)                               # o slider segue a paleta do sprite
+    assert sp.pal_nav.index() == sp.current().palette_index
+    sp.pal_scope.setCurrentIndex(sp.pal_scope.findData("char"))
+    assert sp.pal_nav.count == len(sp.char_palettes()) and ctx.settings["sprite_pal_scope"] == "char"
+
+    ed = PaletteEditor(ctx)
+    ed.load()
+    p = s.palettes[s.find_palette(1, 1)]
+    blue = [i for i, c in enumerate(p.colors) if i and c[2] > c[0] + 60 and c[2] > c[1] + 30]
+    before = list(p.colors)
+    assert blue
+    ed.recolor("blue", "red")
+    p = s.palettes[s.find_palette(1, 1)]
+    assert all(p.colors[i][0] > p.colors[i][2] for i in blue)
+    assert sum(1 for a, b in zip(before, p.colors) if a != b) < len(before) // 2
+    ed.undo()
+    s = ctx.char.sprites                          # o Desfazer troca o objeto
+    assert s.palettes[s.find_palette(1, 1)].colors == before
+    ed.deleteLater()
+    ctx.char.dirty.clear()
+
+
+def test_palette_editor_generates_into_chosen_slots_and_fixes_the_def(gui, monkeypatch):
+    """Gerar só nos lugares vazios (7 a 12) sem tocar nas feitas, acertar no .def os botões que
+    levavam todos à paleta 1 e o pal.defaults, e um Ctrl+Z que volta as duas coisas juntas."""
+    from PySide6.QtWidgets import QMessageBox
+
+    from charfactory.gui.editors.palettes import PaletteEditor
+    from charfactory.tools import palettes12 as P
+    app, ctx, win, _ = gui
+    keymap = ctx.char.definition.section("Palette Keymap")
+    for b in P.BUTTONS:
+        keymap.set(b, "1")                              # como no Jotaro: todo botão na paleta 1
+    ctx.char.definition.section("Info").remove("pal.defaults")
+    ctx.changed("def")                                  # como uma edição feita na aba Definições
+    monkeypatch.setattr(QMessageBox, "question", lambda *a, **k: QMessageBox.StandardButton.Yes)
+    ed = PaletteEditor(ctx)
+    ed.load()
+    assert not ed.map_row.isHidden() and "2, 3, 4, 5, 6" in ed.map_note.text()
+    sff = lambda: ctx.char.sprites
+    before = {n: list(sff().palettes[sff().find_palette(1, n)].colors) for n in range(1, 7)}
+    ed.tabs.setCurrentIndex(ed.TAB_SET)
+    ed.gen_from.setValue(2)
+    ed.gen_to.setValue(12)
+    ed.gen_empty.setChecked(True)                       # o kfm tem 1 a 6: só 7 a 12 são novas
+    ed.generate()
+    app.processEvents()
+    assert all(sff().find_palette(1, n) >= 0 for n in range(7, 13))
+    assert all(sff().palettes[sff().find_palette(1, n)].colors == before[n] for n in range(1, 7))
+    m = P.def_mapping(ctx.char)
+    assert not m["problems"] and m["keymap"]["c"] == 6 and m["defaults"] == [1, 2, 3, 4]
+    assert ed.map_row.isHidden()
+    ed.undo()                                           # um clique: paletas e .def voltam
+    app.processEvents()
+    assert sff().find_palette(1, 7) < 0
+    assert P.def_mapping(ctx.char)["keymap"]["c"] == 1 and not ed.map_row.isHidden()
+    ed.fix_def()                                        # o botão do aviso
+    assert not P.def_mapping(ctx.char)["problems"]
+    ed.deleteLater()
+    ctx.char.dirty.clear()
 
 
 def test_run_in_mugen_or_ikemen_from_the_debug_menu(gui, monkeypatch):
@@ -1147,3 +1481,58 @@ def test_run_in_mugen_or_ikemen_from_the_debug_menu(gui, monkeypatch):
     assert mu_args[0] == str(root / "mugen.exe") and mu_args[1] == "kfm/kfm.def"
     out = win.engine_out.toPlainText()
     assert "Unknown parameter(s): x, y" in out and "Ikemen GO closed" in out and "MUGEN closed" in out
+
+
+def test_find_ranks_the_exact_number_first():
+    from charfactory.gui import quickfind
+    labels = ["1200  Palm", "200  Light punch", "2000  Super", "210  Strong punch"]
+    ranked = sorted(labels, key=lambda lb: -(quickfind.score("200", lb, "") or -1))
+    assert ranked[:2] == ["200  Light punch", "2000  Super"]
+    assert quickfind.score("200,3", "200,3", "") > quickfind.score("200,3", "200,30", "") or \
+        quickfind.score("200,3", "200,30", "") is None
+    assert quickfind.score("200", "200,3", "") > quickfind.score("200", "2001,0", "")
+    assert quickfind.score("punch", "200  Light punch", "") is not None
+
+
+def test_find_searches_only_the_open_tab(gui, monkeypatch):
+    app, ctx, win, _ = gui
+    from PySide6.QtCore import Qt
+    from charfactory.gui import dialogs
+    seen = []
+    monkeypatch.setattr(dialogs.CommandPalette, "exec", lambda self: seen.append(self) or 0)
+
+    def search(page, text):
+        win.show_page(page)
+        app.processEvents()
+        win.find_text()
+        pal = seen[-1]
+        pal.edit.setText(text)
+        return pal, [pal.entries[pal.list.item(k).data(Qt.ItemDataRole.UserRole)][0] for k in range(pal.list.count())]
+
+    pal, rows = search(win.anims, "210")
+    assert rows[0].startswith("210 ")
+    pal.run(pal.list.item(0))
+    assert win.anims.action().number == 210
+    s = win.sprites.sprites()[3]
+    pal, rows = search(win.sprites, f"{s.group},{s.item}")
+    assert rows[0] == f"{s.group},{s.item}"
+    pal.run(pal.list.item(0))
+    assert (win.sprites.sprites()[win.sprites.nav.index()].group, win.sprites.sprites()[win.sprites.nav.index()].item) == (s.group, s.item)
+    pal, rows = search(win.states, "1000")
+    assert rows[0].startswith("1000")
+    pal.run(pal.list.item(0))
+    app.processEvents()
+    assert "statedef 1000" in win.current_code_edit().textCursor().block().text().lower()
+    pal, rows = search(win.states, "VelSet")                    # o texto do arquivo, no fim
+    assert "VelSet" in rows[-1] and "text" in pal.entries[pal.list.item(pal.list.count() - 1).data(Qt.ItemDataRole.UserRole)][1]
+    pal, rows = search(win.cmds, "QCF")
+    assert rows and all("QCF" in r or "qcf" in r.lower() or "VelSet" not in r for r in rows)
+    snd = win.sounds.sounds()[2]
+    pal, rows = search(win.sounds, f"{snd.group},{snd.number}")
+    assert rows[0] == f"{snd.group},{snd.number}"
+    pal, rows = search(win.simulator, "200")
+    assert rows and rows[0].startswith("200")
+    win.show_page(win.defs)                                    # Definições: só o texto
+    n = len(seen)
+    win.find_text()
+    assert len(seen) == n

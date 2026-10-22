@@ -177,8 +177,9 @@ versions play side by side. P2 can stand, guard, crouch or be in the air, and mo
 
 <img src="docs/media/only-timeline.webp" alt="Dragging a PlaySnd on the timeline rewrites its Time trigger, and a double-click opens the controller" width="100%">
 
-Every frame, hit, sound and effect of a move on one track. Drag a `PlaySnd` to another tick and its
-`Time = N` trigger is rewritten; double-click any event to open its controller.
+Every frame, hit, sound and effect of a move on one track. Drag a sound or an effect to another tick
+and its trigger is rewritten (`Time = N`, `!Time` or `AnimElem = N`); double-click any event to open
+its controller.
 
 ### Collision boxes in one click
 
@@ -221,9 +222,9 @@ In the code, <kbd>F12</kbd> or <kbd>Ctrl</kbd>+click opens the definition under 
     </td>
     <td width="50%" valign="top">
       <img src="docs/media/only-palettes12.png" alt="Twelve palettes generated from color bands, previewed in several poses" width="100%"><br>
-      <b>12 palettes by color bands</b><br>
-      Locks what must not change (skin, outline) and generates palettes 2 to 12, previewed in
-      several poses.
+      <b>One palette editor, 12 palettes by color bands</b><br>
+      Every palette on one strip, color tools, a new palette previewed before saving, and a tab that
+      locks what must not change (skin, outline) and generates palettes 2 to 12. Ctrl+Z inside.
     </td>
   </tr>
   <tr>

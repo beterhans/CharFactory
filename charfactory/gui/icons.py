@@ -299,11 +299,17 @@ def _draw(name: str, d: _Pen) -> None:
     elif name == "validate":
         C(12, 12, 9)
         P((8, 12.5), (11, 15.5), (16.5, 9))
-    elif name == "palette":
-        P((12, 3), (7, 4.5), (3.5, 9), (3.5, 14), (6.5, 19), (12, 21), (14, 19.5), (13.5, 17), (15, 15.5),
-          (18, 15.5), (20.5, 13), (20.5, 9), (17, 4.5), close=True)
-        for x, y in ((8, 10), (11.5, 7), (16, 8.5)):
-            C(x, y, 1.1, fill=True)
+    elif name == "palette":                 # paleta de pintor: contorno em curvas, recorte do polegar
+        path = QPainterPath(QPointF(12, 3.2))
+        path.cubicTo(QPointF(17.4, 3.2), QPointF(21, 6.8), QPointF(21, 11))
+        path.cubicTo(QPointF(21, 14.1), QPointF(18.9, 15.6), QPointF(16.5, 15.4))
+        path.cubicTo(QPointF(14.5, 15.2), QPointF(13.3, 16.7), QPointF(14, 18.4))
+        path.cubicTo(QPointF(14.7, 20.2), QPointF(13.5, 21), QPointF(11.8, 21))
+        path.cubicTo(QPointF(6.6, 21), QPointF(3, 17), QPointF(3, 12))
+        path.cubicTo(QPointF(3, 7), QPointF(6.8, 3.2), QPointF(12, 3.2))
+        d.p.drawPath(path)
+        for x, y in ((7.4, 12.6), (8.4, 8.1), (12.4, 6.4), (16.5, 8.4)):
+            C(x, y, 1.25, fill=True)
     elif name == "palfx":
         P((12, 3), (13.5, 9), (19, 10.5), (13.5, 12), (12, 18), (10.5, 12), (5, 10.5), (10.5, 9), close=True)
         L((19, 16), (19, 21))
@@ -828,6 +834,17 @@ def _draw_more(name: str, d: _Pen) -> bool:
         P((2.5, 12.5), (7.5, 6), (11, 9.5), (15, 4), (21.5, 12.5))
         P((2.5, 20.5), (6.5, 13.5), (17.5, 13.5), (21.5, 20.5), close=True)
         L((12, 13.5), (12, 20.5))
+    elif name == "grp_helper":              # helper: o char e um boneco menor ao lado (stand, efeito)
+        C(8.5, 8, 3.5)
+        big = QPainterPath(QPointF(2.5, 21))
+        big.cubicTo(QPointF(2.5, 16), QPointF(5.5, 13.5), QPointF(8.5, 13.5))
+        big.cubicTo(QPointF(11.5, 13.5), QPointF(14.5, 16), QPointF(14.5, 21))
+        d.p.drawPath(big)
+        C(18, 11.5, 2.4)
+        small = QPainterPath(QPointF(14.8, 21))
+        small.cubicTo(QPointF(14.8, 17.5), QPointF(16.3, 15.6), QPointF(18, 15.6))
+        small.cubicTo(QPointF(19.7, 15.6), QPointF(21.5, 17.5), QPointF(21.5, 21))
+        d.p.drawPath(small)
     elif name == "character":               # personagem: busto
         C(12, 8, 4)
         path = QPainterPath(QPointF(4.5, 21))
@@ -866,9 +883,9 @@ def _draw_more(name: str, d: _Pen) -> bool:
         path.cubicTo(QPointF(8, 3), QPointF(16, 3), QPointF(18, 8.5))
         d.p.drawPath(path)
         _arrow_head(d, 18, 9, 75, 3)
-    elif name == "palettes12":              # as 12 paletas: 12 amostras
+    elif name == "palettes12":              # as 12 paletas: 12 amostras com respiro entre elas
         for k in range(12):
-            C(5 + (k % 4) * 4.67, 7 + (k // 4) * 5, 1.5, fill=True)
+            C(5 + (k % 4) * 4.67, 7 + (k // 4) * 5, 1.1, fill=True)
     elif name == "eraser":                  # limpar cores: borracha
         P((3.5, 15), (12.5, 6), (20, 13.5), (13, 20.5), (8.5, 20.5), close=True)
         L((8, 10.5), (15.5, 18))

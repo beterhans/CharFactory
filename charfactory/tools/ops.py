@@ -207,6 +207,24 @@ def import_palette(char: Character, slot: int, act_path: str | Path) -> dict:
     return {"slot": slot, "colors": len(cols)}
 
 
+def variant_colors(colors, hue_shift: float = 0.0, saturation: float = 1.0, brightness: float = 1.0,
+                   keep_indices=None) -> list[tuple[int, int, int]]:
+    """As cores com matiz girado e saturação/brilho multiplicados; keep_indices e o 0 ficam."""
+    keep = set(keep_indices or []) | {0}
+    new = []
+    for i, (r, g, b) in enumerate(colors):
+        if i in keep:
+            new.append((r, g, b))
+            continue
+        h, l, sat = colorsys.rgb_to_hls(r / 255, g / 255, b / 255)
+        h = (h + hue_shift / 360) % 1
+        sat = min(1, sat * saturation)
+        l = min(1, l * brightness)
+        nr, ng, nb = colorsys.hls_to_rgb(h, l, sat)
+        new.append((round(nr * 255), round(ng * 255), round(nb * 255)))
+    return new
+
+
 def make_palette_variant(char: Character, slot: int, hue_shift: float = 0.0,
                          saturation: float = 1.0, brightness: float = 1.0,
                          base: int = 1, keep_indices: list[int] | None = None) -> dict:
@@ -218,18 +236,7 @@ def make_palette_variant(char: Character, slot: int, hue_shift: float = 0.0,
     bi = s.find_palette(1, base)
     if bi < 0:
         raise ValueError(tr("base palette 1,{0} does not exist").format(base))
-    keep = set(keep_indices or []) | {0}
-    new = []
-    for i, (r, g, b) in enumerate(s.palettes[bi].colors):
-        if i in keep:
-            new.append((r, g, b))
-            continue
-        h, l, sat = colorsys.rgb_to_hls(r / 255, g / 255, b / 255)
-        h = (h + hue_shift / 360) % 1
-        sat = min(1, sat * saturation)
-        l = min(1, l * brightness)
-        nr, ng, nb = colorsys.hls_to_rgb(h, l, sat)
-        new.append((round(nr * 255), round(ng * 255), round(nb * 255)))
+    new = variant_colors(s.palettes[bi].colors, hue_shift, saturation, brightness, keep_indices)
     idx = s.find_palette(1, slot)
     if idx >= 0:
         s.palettes[idx].colors = new

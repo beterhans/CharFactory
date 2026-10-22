@@ -349,11 +349,11 @@ QTabBar::tab:selected {{ color: {u['text']}; border-bottom-color: {u['accent']};
 QTabBar::close-button {{ image: url({a}close.svg); subcontrol-position: right; margin-left: 4px; border-radius: 4px; }}
 QTabBar::close-button:hover {{ background: {u['panel_alt']}; }}
 
-/* project tabs: chips on the main bar */
-QTabBar#projectTabs::tab {{ border: 1px solid transparent; border-radius: 6px; padding: 3px 0 3px 10px;
-                           margin: 2px 4px 2px 0; color: {u['text_dim']}; font-weight: 500; }}
-QTabBar#projectTabs::tab:hover {{ background: {u['panel']}; color: {u['text']}; }}
-QTabBar#projectTabs::tab:selected {{ background: {u['panel_alt']}; border-color: {u['border']}; color: {u['text']}; }}
+/* open characters: the current one as a chip on the main bar, the others in its menu */
+QToolButton#projectSwitcher {{ background: {u['panel_alt']}; border: 1px solid {u['border']}; border-radius: 6px;
+                              padding: 3px 8px; margin: 2px 4px 2px 0; color: {u['text']}; font-weight: 500; }}
+QToolButton#projectSwitcher:hover {{ background: {u['panel']}; }}
+QToolButton#projectSwitcher::menu-indicator {{ subcontrol-position: right center; right: 4px; }}
 
 /* document tabs: the active one merges with the editor below */
 QWidget#docStrip, QTabWidget#codeTabs > QTabBar {{ background: {u['panel']}; }}

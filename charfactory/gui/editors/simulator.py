@@ -98,7 +98,8 @@ class MoveTimeline(QWidget):
     sons, efeitos, tela) sobre os ticks da simulação.
 
     Clicar leva ao tick; duplo clique num evento abre o controlador no código; arrastar um
-    evento que dispara por `Time = N` pede para mudar o N (sinal `moved`). Roda do mouse anda
+    evento que dispara por `Time = N`, `!Time` ou `AnimElem` pede para mudar o gatilho (sinal
+    `moved`). Roda do mouse anda
     na linha, Ctrl+roda dá zoom."""
     seek = Signal(int)
     open_item = Signal(object)
@@ -178,6 +179,7 @@ class MoveTimeline(QWidget):
         it = self._item_at(e.position())
         if it is not None and self.can_drag(it):
             self._drag = {"item": it, "x": e.position().x(), "to": it["i0"]}
+            self.setCursor(Qt.CursorShape.ClosedHandCursor)    # pegou o evento: mão fechada
         self.seek.emit(it["i0"] if it is not None else self._tick_at(e.position().x()))
 
     def mouseMoveEvent(self, e):  # noqa: N802
@@ -196,19 +198,24 @@ class MoveTimeline(QWidget):
             from PySide6.QtWidgets import QToolTip
             tip = it["tip"] if it else ""
             if it is not None and self.can_drag(it):
-                tip += tr("\nDrag to change the tick (rewrites the Time = N)")
+                tip += tr("\nDrag to another tick (rewrites the Time or AnimElem trigger)")
+            elif it is not None and it.get("ci") is not None and not it.get("hitsound") and \
+                    it.get("kind") not in ("quadro", "pausa", "acerto", "defesa"):
+                tip += tr("\nTo drag it, its trigger has to be just Time = N, !Time or AnimElem = N")
             if it is not None and it.get("ci") is not None:
                 tip += tr("\nDouble-click opens it in the code")
             if tip:
                 QToolTip.showText(e.globalPosition().toPoint(), tip, self)
             else:
                 QToolTip.hideText()
-            self.setCursor(Qt.CursorShape.SizeHorCursor if it is not None and self.can_drag(it)
+            # mão aberta: o evento se move inteiro (as setas de redimensionar sugeriam esticar)
+            self.setCursor(Qt.CursorShape.OpenHandCursor if it is not None and self.can_drag(it)
                            else Qt.CursorShape.PointingHandCursor if it is not None else Qt.CursorShape.ArrowCursor)
 
     def mouseReleaseEvent(self, e):  # noqa: N802
         d, self._drag = self._drag, None
         if d is not None:
+            self.setCursor(Qt.CursorShape.OpenHandCursor)
             self.update()
             if d["to"] != d["item"]["i0"]:
                 self.moved.emit(d["item"], d["to"])
@@ -829,13 +836,13 @@ class SimulatorPage(QWidget):
         return movetimeline.controller(self.ctx.char, item["state"], item["ci"])
 
     def _can_drag(self, item) -> bool:
-        """Só o que dispara por um simples `Time = N` (som, efeito, tela): o acerto depende das
-        caixas, e o som do acerto vem do HitDef."""
+        """Som, efeito ou tela cujo momento vem de um gatilho só (`Time = N`, `!Time`,
+        `AnimElem = N`): o acerto depende das caixas, e o som do acerto vem do HitDef."""
         from ...tools import movetimeline
         if item.get("kind") in ("quadro", "pausa", "acerto", "defesa") or item.get("hitsound"):
             return False
         ctrl, _ = self._controller(item)
-        return ctrl is not None and movetimeline.time_trigger(ctrl) is not None
+        return ctrl is not None and movetimeline.timing_trigger(ctrl) is not None
 
     def open_item(self, item) -> None:
         from ...tools import movetimeline
@@ -849,16 +856,13 @@ class SimulatorPage(QWidget):
         from ...tools import movetimeline
         if not self.sim or not self.ctx.char:
             return
-        delta = movetimeline.state_ticks(self.sim, item["i0"], to, item.get("who") or "P1")
-        if not delta:
-            return self.ctx.status.emit(tr("The event fell in a pause: the state Time does not change there"))
         try:
-            r = movetimeline.shift_time(self.ctx.char, item["state"], item["ci"], delta)
+            r = movetimeline.move_event(self.ctx.char, self.sim, item, to)
         except ValueError as e:
             return self.ctx.status.emit(str(e))
         # grava, entra no desfazer e avisa as páginas de código; a mudança simula de novo
         self.ctx.changed(r["part"])
-        self.ctx.status.emit(f"[{r['controller']}]: Time = {r['old']} → {r['new']}")
+        self.ctx.status.emit(f"[{r['controller']}]: {r['old']} → {r['new']}" + (f" · {r['note']}" if r["note"] else ""))
 
     def on_event(self, item) -> None:
         t = item.data(Qt.ItemDataRole.UserRole)

@@ -2,8 +2,9 @@
 frame data, acertos, sons, efeitos, tela), com o caminho de volta ao controlador no código.
 
 Cada item guarda o estado e a posição do controlador no statedef (`ci`). Com isso a interface
-abre a linha do controlador e, quando o gatilho é um simples `Time = N`, arrasta o evento para
-outro tick reescrevendo o N.
+abre a linha do controlador e, quando o momento vem de um gatilho só (`Time = N`, `!Time`,
+`AnimElem = N` ou `AnimElemTime(N) = M`), arrasta o evento para outro tick reescrevendo esse
+gatilho: por tempo continua por tempo, por quadro da animação continua por quadro.
 """
 from __future__ import annotations
 
@@ -20,6 +21,11 @@ VISUAL = {"envshake", "palfx", "bgpalfx", "allpalfx", "envcolor", "afterimage", 
           "pause", "assertspecial", "angledraw", "makedust"}
 
 _TIME = re.compile(r"^\s*time\s*=\s*(\d+)\s*$", re.I)
+_NOT_TIME = re.compile(r"^\s*!\s*time\s*$", re.I)
+_ELEM = re.compile(r"^\s*animelem\s*=\s*(\d+)\s*(?:,\s*=?\s*0\s*)?$", re.I)
+_ELEM_TIME = re.compile(r"^\s*animelemtime\s*\(\s*(\d+)\s*\)\s*=\s*(\d+)\s*$", re.I)
+_MOMENT = re.compile(r"\b(time|animelem|animelemtime|animtime|animelemno)\b", re.I)
+_TRIGGER_LINE = re.compile(r"^(\s*trigger\d+\s*=\s*)(.*?)(\s*;.*)?$", re.I | re.S)
 
 
 def build(sim: simulate.Sim) -> dict:
@@ -137,13 +143,26 @@ def code_line(states, ctrl) -> int | None:
     return None
 
 
-def time_trigger(ctrl) -> tuple[int, int] | None:
-    """(linha na seção, N) quando o controlador dispara só por `trigger1 = Time = N`."""
-    trig = [e for e in ctrl.section.entries() if re.fullmatch(r"trigger\d+", e.key.lower().replace(" ", ""))]
-    if len(trig) != 1:
+def timing_trigger(ctrl) -> dict | None:
+    """O gatilho que marca o momento do controlador, quando dá para mudá-lo arrastando:
+    {"line", "kind": "time", "n"} para `Time = N`/`!Time`, ou {"line", "kind": "elem", "elem",
+    "off"} para `AnimElem = E`/`AnimElemTime(E) = k`. Vale com um só triggerN; os triggerall
+    podem existir desde que não falem de tempo nem de quadro (senão mudar um não basta)."""
+    entries = ctrl.section.entries()
+    trig = [e for e in entries if re.fullmatch(r"trigger\d+", e.key.lower().replace(" ", ""))]
+    alls = [e for e in entries if e.key.lower().replace(" ", "") == "triggerall"]
+    if len(trig) != 1 or any(_MOMENT.search((e.value or "").split(";")[0]) for e in alls):
         return None
-    m = _TIME.match(trig[0].value)
-    return (trig[0].line, int(m[1])) if m else None
+    v = (trig[0].value or "").split(";")[0]
+    if m := _TIME.match(v):
+        return {"line": trig[0].line, "kind": "time", "n": int(m[1])}
+    if _NOT_TIME.match(v):
+        return {"line": trig[0].line, "kind": "time", "n": 0}
+    if m := _ELEM.match(v):
+        return {"line": trig[0].line, "kind": "elem", "elem": int(m[1]), "off": 0}
+    if m := _ELEM_TIME.match(v):
+        return {"line": trig[0].line, "kind": "elem", "elem": int(m[1]), "off": int(m[2])}
+    return None
 
 
 def state_ticks(sim: simulate.Sim, i0: int, i1: int, who: str = "P1") -> int:
@@ -158,17 +177,61 @@ def state_ticks(sim: simulate.Sim, i0: int, i1: int, who: str = "P1") -> int:
     return n if i1 >= i0 else -n
 
 
-def shift_time(char, state: int, ci: int, delta: int) -> dict:
-    """Muda o `Time = N` do gatilho do controlador em `delta` ticks (nunca abaixo de 0)."""
-    ctrl, states = controller(char, state, ci)
+def _still(rec, who: str) -> bool:
+    """Tick em que o tempo do estado (e a animação) de `who` não anda: pausa ou acerto."""
+    ent = next((e for e in rec["ents"] if e["name"] == who), None)
+    return bool(rec["pause"] or (ent and ent.get("frozen")))
+
+
+def elem_at(sim: simulate.Sim, i: int, who: str = "P1") -> tuple[int, int, int] | None:
+    """(estado, elemento da anim, ticks dentro do elemento) de `who` no índice i do registro."""
+    track = sim.track
+    find = lambda r: next((e for e in r["ents"] if e["name"] == who), None)
+    ent = find(track[i]) if 0 <= i < len(track) else None
+    if ent is None or not ent.get("elem"):
+        return None
+    key = (ent["state"], ent["anim"], ent["elem"])
+    off, k = 0, i - 1
+    while k >= 0:
+        e = find(track[k])
+        if e is None or (e["state"], e["anim"], e["elem"]) != key:
+            break
+        if not _still(track[k], who):
+            off += 1
+        k -= 1
+    return ent["state"], ent["elem"], off
+
+
+def move_event(char, sim: simulate.Sim, item: dict, to: int) -> dict:
+    """Leva o evento do item ao índice `to` do registro reescrevendo o gatilho de momento:
+    `Time = N` anda o que o tempo do estado andou (pausas não contam); `AnimElem` vira o quadro
+    mostrado ali (`AnimElemTime(E) = k` quando cai no meio de um quadro)."""
+    ctrl, states = controller(char, item["state"], item["ci"])
     if ctrl is None:
-        raise ValueError(tr("controller {0} of state {1} does not exist").format(ci, state))
-    tt = time_trigger(ctrl)
+        raise ValueError(tr("controller {0} of state {1} does not exist").format(item["ci"], item["state"]))
+    tt = timing_trigger(ctrl)
     if tt is None:
-        raise ValueError(tr("[{0}] is not triggered by a simple Time = N").format(ctrl.section.name))
-    line, old = tt
-    new = max(0, old + delta)
-    text = ctrl.section.lines[line]
-    ctrl.section.lines[line] = re.sub(r"(?i)(time\s*=\s*)\d+", lambda m: f"{m[1]}{new}", text, count=1)
-    return {"state": state, "controller": ctrl.section.name, "old": old, "new": new,
-            "part": part_of(char, states)}
+        raise ValueError(tr("[{0}] has no single Time or AnimElem trigger to move").format(ctrl.section.name))
+    who = item.get("who") or "P1"
+    old_text = (ctrl.section.lines[tt["line"]].split("=", 1)[1]).split(";")[0].strip()
+    if tt["kind"] == "time":
+        delta = state_ticks(sim, item["i0"], to, who)
+        if not delta:
+            raise ValueError(tr("The event fell in a pause: the state Time does not change there"))
+        new_text = f"Time = {max(0, tt['n'] + delta)}"
+    else:
+        at = elem_at(sim, to, who)
+        if at is None or at[0] != item["state"]:
+            raise ValueError(tr("The event can only move inside state {0}").format(item["state"]))
+        _, elem, off = at
+        new_text = f"AnimElem = {elem}" if off == 0 else f"AnimElemTime({elem}) = {off}"
+    if new_text.replace(" ", "").lower() == old_text.replace(" ", "").lower():
+        raise ValueError(tr("The event is already there"))
+    m = _TRIGGER_LINE.match(ctrl.section.lines[tt["line"]])
+    ctrl.section.lines[tt["line"]] = f"{m[1]}{new_text}{m[3] or ''}"
+    # solto na pausa do acerto: o tempo do estado está parado ali, e o evento sai quando ela acaba
+    paused = 0 <= to < len(sim.track) and _still(sim.track[to], who)
+    return {"state": item["state"], "controller": ctrl.section.name, "old": old_text, "new": new_text,
+            "part": part_of(char, states),
+            "note": tr("dropped in the hit pause, where the state's time stands still: it plays when the "
+                       "pause ends") if paused else ""}

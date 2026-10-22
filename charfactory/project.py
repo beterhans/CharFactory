@@ -77,6 +77,13 @@ class Character:
                 cns_common = self.resolve("common1.cns", search_data=True)
                 if cns_common and cns_common.exists():
                     return cns_common
+        elif key == "stcommon" and p and not p.exists():
+            # o Ikemen lê "stcommon = common1.cns" como o data/common1.cns.zss quando o .cns não existe
+            zss = self.resolve(self.file_entry(key) + ".zss", search_data=True)
+            ik = self.ikemen_root() if not zss.exists() else None
+            for c in [zss, *([ik / "data" / (p.name + ".zss")] if ik else [])]:
+                if c.exists():
+                    return c
         return p
 
     def ikemen_root(self) -> Path | None:

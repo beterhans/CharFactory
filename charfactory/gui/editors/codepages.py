@@ -57,8 +57,18 @@ STATE_GROUPS = [
     ("normal", tr("Normal moves"), "grp_normal", tr("200–999: punches, kicks and throws"), lambda n: n < 1000),
     ("special", tr("Specials"), "grp_special", tr("1000–2999: special moves"), lambda n: n < 3000),
     ("super", tr("Supers"), "grp_super", tr("3000–4999: supers and hypers"), lambda n: n < 5000),
+    # sem faixa: os estados que algum Helper roda (e os que eles chamam), em qualquer número
+    ("helper", tr("Helpers"), "grp_helper",
+     tr("States that helpers run (Helper stateno = …) and the ones they change to: stands, projectiles, effects"),
+     lambda n: False),
     ("hit", tr("Reactions"), "grp_hit", tr("5000–5999: states of the one getting hit"), lambda n: n < 6000),
     ("other", tr("Others"), "grp_other", tr("6000 or more: helpers, effects and custom states"), lambda n: True),
+]
+
+# como a árvore de estados se organiza: (modo, nome, dica)
+STATE_VIEWS = [
+    ("grouped", tr("Smart"), tr("Grouped by what each state is: basics, normals, specials, supers, helpers…")),
+    ("classic", tr("Classic"), tr("All states by number")),
 ]
 
 # categorias dos state controllers (cor do ponto na lista e na árvore)
@@ -136,6 +146,19 @@ class CodePage(QWidget):
         head.addWidget(tool_button("collapse_all", tr("Collapse all"), lambda: self._expand_all(False)))
         lv.addLayout(head)
         if kind == "states":
+            # organização da árvore à vista (antes só em Exibir › Árvore de estados)
+            self.view_combo = QComboBox()
+            for mode, text, tip in STATE_VIEWS:
+                self.view_combo.addItem(text, mode)
+                self.view_combo.setItemData(self.view_combo.count() - 1, tip, Qt.ItemDataRole.ToolTipRole)
+            self.view_combo.setCurrentIndex(max(0, self.view_combo.findData(self.view_mode())))
+            self.view_combo.setToolTip(tr("How the state tree is organized"))
+            self.view_combo.activated.connect(lambda i: self.set_view_mode(self.view_combo.itemData(i)))
+            org = QHBoxLayout()
+            org.setSpacing(6)
+            org.addWidget(QLabel(tr("Organize")))
+            org.addWidget(self.view_combo, 1)
+            lv.addLayout(org)
             lv.addWidget(self._tools_button())
         lv.addWidget(self.tree, 1)
         if kind == "states":
@@ -533,14 +556,15 @@ class CodePage(QWidget):
                 grp = self._group("const", tr("Constants"), "grp_const", tr("Character data sections ([Data], [Size], [Velocity]…)"), len(consts), default_open=False)
                 for sec, ln in consts:
                     self._item(grp, sec.name, ln)
-            if self.view_mode() == "flat":
-                # lista tradicional: tudo na ordem do arquivo
-                for n, sd in st.statedefs.items():
+            if self.view_mode() == "classic":
+                # lista tradicional: todos os estados por número
+                for n, sd in sorted(st.statedefs.items(), key=lambda kv: kv[0]):
                     self._statedef_item(self.tree, doc, n, sd, line_of)
                 return
             members: dict[str, list] = {}
+            helpers = self._helper_states(st)
             for n, sd in st.statedefs.items():
-                key = next(k for k, *_rest, test in STATE_GROUPS if test(n))
+                key = "helper" if n in helpers else next(k for k, *_rest, test in STATE_GROUPS if test(n))
                 members.setdefault(key, []).append((n, sd))
             for key, title, ic, tip, _test in STATE_GROUPS:
                 if key not in members:
@@ -578,12 +602,30 @@ class CodePage(QWidget):
                     c.setForeground(1, self._dim())
                     c.setToolTip(0, f"{e.key} = {e.value}")
 
+    def _helper_states(self, st) -> set[int]:
+        """Estados de helper olhando o char inteiro (o Helper pode estar em outro arquivo), com o
+        texto deste arquivo como está no editor (mesmo sem aplicar)."""
+        from ...tools import usage
+        sds = {}
+        try:
+            if self.ctx.char:
+                sds = {n: sd for n, (sd, _f) in self.ctx.char.all_statedefs(include_common=False).items()}
+        except Exception:  # noqa: BLE001 — arquivo do char com erro: vale só este
+            sds = {}
+        sds.update(st.statedefs)
+        return {n for n in usage.helper_states(sds) if n >= 0}
+
     def view_mode(self) -> str:
-        """'grouped' (por faixa: básicos, especiais, supers…) ou 'flat' (ordem do arquivo)."""
-        return self.ctx.settings.get("states_view") or "grouped"
+        """'grouped' (Inteligente: básicos, especiais, supers, helpers…) ou 'classic' (por
+        número). A antiga 'flat' (ordem do arquivo) vira a Clássica."""
+        mode = self.ctx.settings.get("states_view") or "grouped"
+        return "classic" if mode == "flat" else mode if mode in {m for m, *_ in STATE_VIEWS} else "grouped"
 
     def set_view_mode(self, mode: str) -> None:
         self.ctx.settings["states_view"] = mode
+        combo = getattr(self, "view_combo", None)
+        if combo is not None:
+            combo.setCurrentIndex(max(0, combo.findData(mode)))
         self.fill_tree()
 
     @staticmethod

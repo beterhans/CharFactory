@@ -9,7 +9,7 @@ import re
 
 from PySide6.QtCore import QEvent, QObject, QPoint, QRect, QSize, Qt, Signal
 from PySide6.QtGui import QAction, QColor, QFont, QFontMetrics, QKeySequence, QPainter, QPen
-from PySide6.QtWidgets import (QCheckBox, QComboBox, QFrame, QGridLayout, QHBoxLayout, QLabel, QLayout, QScrollArea, QTabBar,
+from PySide6.QtWidgets import (QCheckBox, QComboBox, QFrame, QGridLayout, QHBoxLayout, QLabel, QLayout, QScrollArea,
                                QSizePolicy, QSlider, QSpinBox, QToolButton, QVBoxLayout, QWidget)
 
 from .icons import icon
@@ -167,38 +167,6 @@ class ElidedCombo(QComboBox):
         room = r.width() - (self.iconSize().width() + 6 if not opt.currentIcon.isNull() else 0) - 4
         opt.currentText = self.fontMetrics().elidedText(opt.currentText, Qt.TextElideMode.ElideRight, max(room, 10))
         p.drawControl(QStyle.ControlElement.CE_ComboBoxLabel, opt)
-
-
-class ChipTabBar(QTabBar):
-    """Barra de abas em chip com botão de fechar próprio. O botão padrão do Qt fica colado na
-    borda direita da aba (por cima do contorno) e o QSS não consegue afastá-lo; aqui ele vem
-    dentro de uma caixa com respiro dos dois lados."""
-
-    def tabInserted(self, index):  # noqa: N802
-        super().tabInserted(index)
-        box = QWidget()
-        box.setObjectName("plain")
-        lay = QHBoxLayout(box)
-        lay.setContentsMargins(4, 0, 6, 0)
-        lay.setSpacing(0)
-        b = QToolButton()
-        b.setObjectName("tabClose")
-        b.setIcon(icon("close"))
-        b.setIconSize(QSize(12, 12))
-        b.setFixedSize(24, 24)          # alvo de clique de 24 px; o × continua pequeno
-        b.setAutoRaise(True)
-        b.setToolTip(tr("Close this project"))
-        b.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        b.setCursor(Qt.CursorShape.PointingHandCursor)
-        b.clicked.connect(lambda: self._close(box))
-        lay.addWidget(b)
-        self.setTabButton(index, QTabBar.ButtonPosition.RightSide, box)
-
-    def _close(self, box) -> None:
-        for i in range(self.count()):
-            if self.tabButton(i, QTabBar.ButtonPosition.RightSide) is box:
-                self.tabCloseRequested.emit(i)
-                return
 
 
 class SegmentedTabs(QWidget):

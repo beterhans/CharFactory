@@ -120,6 +120,11 @@ class Provider:
     def add_results(self, msgs: list, results: list[tuple[Call, Result]]) -> None:
         raise NotImplementedError
 
+    def forget_images(self, msgs: list) -> None:
+        """Tira do histórico as imagens que o modelo já viu (fica só a última leva): sem cache, cada
+        etapa reenviava todas as folhas de animação. A Anthropic guarda o histórico no cache, e
+        mexer no começo dele faria pagar tudo de novo; lá elas ficam."""
+
     def list_models(self) -> list[str]:
         raise NotImplementedError
 
@@ -237,6 +242,13 @@ class OpenAI(Provider):
                 *[{"type": "image_url", "image_url": {"url": "data:image/png;base64," + base64.b64encode(p).decode("ascii")}}
                   for p in images]]})
 
+    def forget_images(self, msgs):
+        lots = [m for m in msgs if m.get("role") == "user" and isinstance(m.get("content"), list)
+                and any(c.get("type") == "image_url" for c in m["content"])]
+        for m in lots[:-1]:
+            n = sum(c.get("type") == "image_url" for c in m["content"])
+            m["content"] = f"({n} image(s) returned by the tool calls above, already seen: not sent again)"
+
     def list_models(self):
         r = _request(f"{self.base_url}/models", self._headers())
         return sorted(m["id"] for m in r.get("data", []))
@@ -269,6 +281,13 @@ class Gemini(Provider):
     label = "Google Gemini"
     default_model = "gemini-flash-latest"         # apelido: sempre o Flash mais novo
     default_base = "https://generativelanguage.googleapis.com/v1beta"
+    # raciocínio curto a cada etapa: no nível padrão (alto) o Flash pensava ~40 s por chamada de
+    # ferramenta. Modelos sem níveis (2.5 e anteriores) recusam o campo: aí ele sai e fica fora
+    THINKING = "low"
+
+    def __init__(self, api_key: str = "", model: str = "", base_url: str = ""):
+        super().__init__(api_key, model, base_url)
+        self.thinking = self.THINKING
 
     def _headers(self) -> dict:
         return {"x-goog-api-key": self.api_key}
@@ -286,7 +305,17 @@ class Gemini(Provider):
         body = {"systemInstruction": {"parts": [{"text": system}]}, "contents": msgs,
                 "tools": [{"functionDeclarations": decls}]}
         model = self.model if self.model.startswith("models/") else f"models/{self.model}"
-        r = _request(f"{self.base_url}/{model}:generateContent", self._headers(), body)
+        url = f"{self.base_url}/{model}:generateContent"
+        if self.thinking:
+            body["generationConfig"] = {"thinkingConfig": {"thinkingLevel": self.thinking}}
+        try:
+            r = _request(url, self._headers(), body)
+        except ProviderError as e:
+            if not (self.thinking and e.status == 400 and "think" in str(e).lower()):
+                raise
+            self.thinking = ""
+            body.pop("generationConfig")
+            r = _request(url, self._headers(), body)
         cands = r.get("candidates") or []
         if not cands:
             block = (r.get("promptFeedback") or {}).get("blockReason")
@@ -313,6 +342,12 @@ class Gemini(Provider):
             parts += [{"inlineData": {"mimeType": "image/png", "data": base64.b64encode(p).decode("ascii")}}
                       for p in res.images]
         msgs.append({"role": "user", "parts": parts})
+
+    def forget_images(self, msgs):
+        lots = [m for m in msgs if m.get("role") == "user" and any("inlineData" in p for p in m.get("parts", []))]
+        for m in lots[:-1]:
+            # a resposta da ferramenta já diz o que a folha mostrava (números e nomes das linhas)
+            m["parts"] = [p for p in m["parts"] if "inlineData" not in p]
 
     def list_models(self):
         r = _request(f"{self.base_url}/models?pageSize=200", self._headers())

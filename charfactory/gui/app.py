@@ -30,7 +30,7 @@ from .editors.codepages import CodePage
 from .editors.sounds import SoundEditor
 from .editors.sprites import SpriteEditor
 from .icons import icon
-from .widgets import ChipTabBar, SegmentedTabs, Section, install_ui_polish, install_wheel_guard
+from .widgets import SegmentedTabs, Section, install_ui_polish, install_wheel_guard
 from ..i18n import tr
 
 APP_NAME = "Char Factory"
@@ -360,13 +360,18 @@ class MainWindow(QMainWindow):
         self.bottom_open = False
         self._shown_errors: set = set()
 
-        self.project_tabs = ChipTabBar()
-        self.project_tabs.setObjectName("projectTabs")
-        self.project_tabs.setExpanding(False)
-        self.project_tabs.setDrawBase(False)
-        self.project_tabs.setIconSize(QSize(15, 15))
-        self.project_tabs.tabCloseRequested.connect(self.close_project_at)
-        self.project_tabs.currentChanged.connect(self.on_project_tab)
+        # personagens abertos: o atual com o nome inteiro e a lista dos outros num menu (as
+        # abas em chip encolhiam e cortavam os nomes com vários personagens abertos)
+        self.project_switcher = QToolButton()
+        self.project_switcher.setObjectName("projectSwitcher")
+        self.project_switcher.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
+        self.project_switcher.setIcon(icon("character", toggles=False))
+        self.project_switcher.setIconSize(QSize(15, 15))
+        self.project_switcher.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        self.project_menu = QMenu(self.project_switcher)
+        self.project_menu.setToolTipsVisible(True)
+        self.project_menu.aboutToShow.connect(self._fill_project_menu)
+        self.project_switcher.setMenu(self.project_menu)
         # a barra 'Extra' (muda com o editor) entra na barra principal, à direita
         self.extra = QToolBar(tr("Extra"))
         self.extra.setObjectName("tb_extra")
@@ -534,11 +539,15 @@ class MainWindow(QMainWindow):
         sv = v.addMenu(icon("states"), tr("State tree"))
         view_group = QActionGroup(self)
         view_group.setExclusive(True)
-        for mode, text, ic in [("grouped", tr("Grouped (basics, normals, specials, supers…)"), "grp_special"),
-                               ("flat", tr("Plain list (file order)"), "goto_line")]:
+        view_actions = {}
+        for mode, text, ic in [("grouped", tr("Smart (basics, normals, specials, supers, helpers…)"), "grp_special"),
+                               ("classic", tr("Classic (by state number)"), "renumber")]:
             a = self.act(sv, text, lambda on, m=mode: on and self.states.set_view_mode(m), None, ic, checkable=True)
             a.setChecked(self.states.view_mode() == mode)
             view_group.addAction(a)
+            view_actions[mode] = a
+        # a escolha também muda no topo da árvore: o menu mostra a atual ao abrir
+        sv.aboutToShow.connect(lambda: view_actions[self.states.view_mode()].setChecked(True))
         v.addSeparator()
         self.theme_menu = v.addMenu(tr("Theme"))
         self.theme_menu.aboutToShow.connect(self.fill_themes)
@@ -601,8 +610,8 @@ class MainWindow(QMainWindow):
                 # o atalho é do botão da página (Ctrl+E); aqui vai só escrito
                 self.act(menu, tr("Edit image…\tCtrl+E"), self.sprites.edit_image, None, "paint")
                 menu.addAction(tool["sheet"])
-                self.act(menu, tr("Advanced palette editor…"), self.sprites.open_advanced, "Ctrl+Shift+P", "palette")
-                self.act(menu, tr("12 palettes by color bands…"), self.sprites.open_palettes12, None, "palettes12")
+                self.act(menu, tr("Palette editor (colors, new palette, 12 palettes)…"), self.open_palette_editor,
+                         "Ctrl+Shift+P", "palette")
                 self.act(menu, tr("Import sprites from another project…"), lambda: self.import_from_project("sprites"))
             elif page is self.anims:
                 self.act(menu, tr("Save animation GIF…"), self.anims.export_gif)
@@ -659,7 +668,7 @@ class MainWindow(QMainWindow):
         # só com projeto aberto (na tela inicial ficavam botões que não faziam nada)
         self._char_actions = [main.addAction(icon("save"), tr("Save (Ctrl+S)"), self.save)]
         self._char_actions.append(main.addSeparator())
-        self._char_actions.append(main.addWidget(self.project_tabs))
+        self._char_actions.append(main.addWidget(self.project_switcher))
         self._char_actions.append(main.addSeparator())
         for a in self.editor_actions:
             main.addAction(a)
@@ -834,6 +843,27 @@ class MainWindow(QMainWindow):
             fn()
 
     def find_text(self, replace: bool = False) -> None:
+        """Ctrl+F procura só na aba aberta (animação, sprite, som, statedef, comando…); nas abas
+        de código, o texto do arquivo vem como último item. Ctrl+H e a aba Definições: o texto."""
+        from . import quickfind
+        page = self.current_page()
+        found = None if replace or page is None else quickfind.entries(self, page)
+        if found is not None:
+            hint, items = found
+            ed = self.current_code_edit()
+            sel = ed.textCursor().selectedText() if ed else ""
+
+            def tail(q):
+                if not q.strip() or ed is None:
+                    return []
+                return [(tr("Find “{0}” in the text of this file").format(q.strip()), tr("text"),
+                         lambda: self._find_in_text(q.strip()))]
+            dialogs.CommandPalette(items, self, placeholder=hint, score=quickfind.score, tail=tail,
+                                   text=sel if sel and " " not in sel else "").exec()
+            return
+        self._find_in_text(None, replace)
+
+    def _find_in_text(self, text: str | None, replace: bool = False) -> None:
         from .findreplace import FindReplaceDialog
         if not self.current_code_edit():
             self.show_page(self.states if self.ctx.char else None)
@@ -841,7 +871,10 @@ class MainWindow(QMainWindow):
         if not ed:
             return
         dlg = FindReplaceDialog.instance(self)
-        dlg.open_for(ed.textCursor().selectedText(), replace=replace, all_files=False)
+        dlg.open_for(text if text is not None else ed.textCursor().selectedText(), replace=replace, all_files=False)
+        if text:
+            dlg.find_edit.setText(text)
+            dlg.find(False)
 
     def goto_line(self) -> None:
         ed = self.current_code_edit()
@@ -1139,10 +1172,7 @@ class MainWindow(QMainWindow):
         c = self.ctx.char
         dirty = self.is_dirty()
         self.setWindowTitle(f"{'● ' if dirty else ''}{c.name + ' — ' if c else ''}{APP_NAME}")
-        for i, p in enumerate(self.ctx.projects):
-            if i < self.project_tabs.count():
-                d = bool(p.dirty) or (p is c and dirty)
-                self.project_tabs.setTabText(i, ("● " if d else "") + p.name)
+        self.fill_project_tabs()
 
     # ------------------------------------------------------------ explorador do projeto
 
@@ -1427,28 +1457,12 @@ class MainWindow(QMainWindow):
             self.import_dropped_sounds(sounds)
 
     def import_dropped_images(self, paths: list[Path]) -> None:
-        """Imagens soltas na janela viram sprites novos no grupo atual (próximos índices livres)."""
-        c = self.ctx.char
-        cur = self.sprites.current()
-        group = cur.group if cur else 0
-        used = {s.item for s in c.sprites.sprites if s.group == group}
-        item, done = 0, []
-        for p in sorted(paths):
-            while item in used:
-                item += 1
-            try:
-                ops.import_sprite(c, p, group, item)
-            except Exception as ex:  # noqa: BLE001
-                QMessageBox.warning(self, tr("Import sprite"), f"{p.name}: {ex}")
-                continue
-            used.add(item)
-            done.append((group, item))
-        if done:
-            self.ctx.changed("sprites")
-            self.show_page(self.sprites)
-            self.sprites.load(keep=True)
-            self.sprites.select(*done[0])
-            self.ctx.status.emit(tr("{0} sprite(s) imported into group {1}").format(len(done), group))
+        """Imagens soltas na janela abrem a janela de importar (grupo, paleta e fundo)."""
+        self.show_page(self.sprites)
+        try:
+            self.sprites.import_paths(sorted(paths))
+        except Exception as ex:  # noqa: BLE001 — imagem que o Pillow não abre
+            QMessageBox.warning(self, tr("Import sprite"), str(ex))
 
     def import_dropped_sounds(self, paths: list[Path]) -> None:
         c = self.ctx.char
@@ -1727,27 +1741,48 @@ class MainWindow(QMainWindow):
                 if p.files and p.is_modified():
                     p.apply_all()
 
+    def _project_dirty(self, c) -> bool:
+        return bool(c.dirty) or (c is self.ctx.char and any(p.is_modified() for p in self.code_pages))
+
     def fill_project_tabs(self) -> None:
-        self.project_tabs.blockSignals(True)
-        while self.project_tabs.count():
-            self.project_tabs.removeTab(0)
-        for c in self.ctx.projects:
-            dirty = bool(c.dirty) or (c is self.ctx.char and any(p.is_modified() for p in self.code_pages))
-            i = self.project_tabs.addTab(icon("character", toggles=False), ("● " if dirty else "") + c.name)
-            self.project_tabs.setTabToolTip(i, str(c.def_path))
-        if self.ctx.char in self.ctx.projects:
-            self.project_tabs.setCurrentIndex(self.ctx.projects.index(self.ctx.char))
-        self.project_tabs.blockSignals(False)
+        """O botão mostra o personagem atual (● = não salvo) e quantos outros estão abertos."""
+        c, n = self.ctx.char, len(self.ctx.projects)
+        if c is None:
+            self.project_switcher.setText("")
+            return
+        name = c.name if len(c.name) <= 32 else c.name[:31] + "…"
+        self.project_switcher.setText(("● " if self._project_dirty(c) else "") + name
+                                      + (f"   +{n - 1}" if n > 1 else "") + "  ▾")
+        self.project_switcher.setToolTip(
+            (tr("{0} characters open: click to switch").format(n) if n > 1 else tr("Open character"))
+            + f"\n{c.def_path}")
+
+    def _fill_project_menu(self) -> None:
+        m = self.project_menu
+        m.clear()
+        n = len(self.ctx.projects)
+        head = m.addAction(tr("Open characters ({0})").format(n))
+        head.setEnabled(False)                   # título (o addSection some em alguns estilos)
+        for i, c in enumerate(self.ctx.projects):
+            a = m.addAction(icon("character", toggles=False), ("● " if self._project_dirty(c) else "") + c.name)
+            a.setCheckable(True)
+            a.setChecked(c is self.ctx.char)
+            if c is self.ctx.char:               # o ícone esconde o ✓: o atual vai em negrito
+                f = a.font()
+                f.setBold(True)
+                a.setFont(f)
+            a.setToolTip(str(c.def_path))
+            a.triggered.connect(lambda _=False, k=i: self.on_project_tab(k))
+        m.addSeparator()
+        m.addAction(icon("open"), tr("Open another character…"), self.open_dialog)
+        m.addAction(icon("close"), tr("Close this character"), self.close_project)
+        others = m.addAction(tr("Close the others"), self.close_other_projects)
+        others.setEnabled(n > 1)
 
     def on_project_tab(self, i: int) -> None:
         if 0 <= i < len(self.ctx.projects) and self.ctx.projects[i] is not self.ctx.char:
             self.commit_code()
             self.ctx.activate(self.ctx.projects[i])
-
-    def close_project_at(self, i: int) -> None:
-        if 0 <= i < len(self.ctx.projects):
-            self.on_project_tab(i)
-            self.close_project()
 
     def close_all_projects(self) -> bool:
         while self.ctx.char:
@@ -1911,6 +1946,15 @@ class MainWindow(QMainWindow):
             self.ctx.status.emit(tr("Automatic backup of {0} project(s) in _backups/autosave").format(n))
 
     # ------------------------------------------------------------ ferramentas novas
+
+    def open_palette_editor(self) -> None:
+        """Editor de paletas no sprite que está na tela: o frame da animação, na página de
+        animações; senão o do editor de sprites."""
+        sprite = None
+        if self.current_page() is self.anims:
+            f = self.anims.frame()
+            sprite = (f.group, f.item) if f is not None else None
+        self.sprites.open_palette_editor(sprite=sprite)
 
     def import_from_project(self, kind: str) -> None:
         if self.need_char():

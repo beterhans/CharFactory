@@ -48,7 +48,9 @@ class Settings(dict):
 
 # parte do modelo -> atributo do Character que a guarda (carregado sob demanda)
 PARTS = {"sprites": "sprites", "anims": "anims", "sounds": "sounds",
-         "states": "states", "commands": "commands"}
+         "states": "states", "commands": "commands", "def": "definition"}
+# partes carregadas a partir do [Files] do .def: desfazer um .def com outro [Files] recarrega
+FILE_PARTS = {"sprites": "sprites", "anims": "anims", "sounds": "sounds", "commands": "commands", "states": "states"}
 
 
 def _snapshot(part: str, obj):
@@ -60,6 +62,11 @@ def _snapshot(part: str, obj):
         new.palettes = [sffmod.Palette(p.group, p.item, list(p.colors)) for p in obj.palettes]
         return new
     return copy.deepcopy(obj)
+
+
+def _files_text(doc) -> str:
+    s = doc.find("files") if doc is not None else None
+    return s.text() if s is not None else ""
 
 
 class UndoStack:
@@ -108,6 +115,11 @@ class UndoStack:
         self._when[part] = now
         self._last[part] = _snapshot(part, obj)
 
+    def cut(self, part: str) -> None:
+        """A próxima mudança da parte vira um passo próprio, mesmo vindo logo depois de outra
+        (ações de um clique, como tons de cinza, não se juntam à anterior)."""
+        self._when[part] = 0
+
     def _swap(self, src: list, dst: list) -> str | None:
         if not src:
             return None
@@ -116,6 +128,11 @@ class UndoStack:
         if cur is not None:
             dst.append((part, _snapshot(part, cur), label))
         restored = _snapshot(part, state)
+        if part == "def" and cur is not None and _files_text(cur) != _files_text(restored):
+            # outro [Files]: os arquivos carregados não valem mais (como ao aplicar o texto do .def)
+            for name in (*FILE_PARTS.values(), "common_states", "constants"):
+                self.char.__dict__.pop(name, None)
+            self.forget(*FILE_PARTS)
         self.char.__dict__[PARTS[part]] = restored
         if part == "states":
             self.char.__dict__.pop("constants", None)   # o .cns é um dos arquivos de estados
@@ -226,13 +243,14 @@ class AppContext(QObject):
     def undo_stack(self) -> UndoStack | None:
         return self.history.get(id(self.char)) if self.char else None
 
-    def changed(self, part: str) -> None:
-        """Uma parte do modelo mudou: marca para gravar, guarda no histórico e avisa os editores."""
+    def changed(self, part: str, label: str = "") -> None:
+        """Uma parte do modelo mudou: marca para gravar, guarda no histórico e avisa os editores.
+        `label` junta passos de partes diferentes de uma ação só (ex.: paletas e .def)."""
         if self.char:
             self.char.mark(part)
             h = self.undo_stack()
             if h:
-                h.record(part)
+                h.record(part, label)
         self.modelChanged.emit(part)
 
     def record(self, part: str) -> None:

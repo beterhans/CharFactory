@@ -31,6 +31,50 @@ def test_swap_colors_keeps_images(kfm):
     assert _rgba(kfm, 200, 1) == before
 
 
+def test_alternate_palettes_follow_the_shared_pixels(kfm):
+    """As paletas 1,2+ pintam os mesmos índices dos sprites da 1,1: limpar cores sem uso na 1,2
+    apagava a paleta inteira, e trocar/ordenar a 1,1 deixava a 1,2 com as cores fora do lugar."""
+    used = edit.used_palette_indices(kfm, 1)
+    assert edit.used_palette_indices(kfm, 2) == used
+    before2 = _rgba(kfm, 0, 0, 2)
+    edit.clear_unused_colors(kfm, 2)
+    assert _rgba(kfm, 0, 0, 2) == before2
+    a, b = sorted(used - {0})[:2]
+    edit.swap_palette_colors(kfm, 1, a, b)
+    assert _rgba(kfm, 0, 0, 2) == before2
+    edit.sort_palette_by_tones(kfm, 1)
+    assert _rgba(kfm, 0, 0, 2) == before2
+
+
+def test_own_palette_by_group_and_item(kfm):
+    k = kfm.sprites.find_palette(9000, 1)
+    edit.set_palette_colors(kfm, (9000, 1), {"5": "#102030"})
+    assert kfm.sprites.palettes[k].colors[5] == (16, 32, 48)
+    with pytest.raises(ValueError):
+        edit.set_palette_colors(kfm, (3, 99), {"5": "#102030"})
+
+
+def test_palette_color_effects(kfm):
+    """Efeitos como os do FF: azul vira vermelho só nos tons azuis; trocas de canal; e uma
+    paleta repetida (mesmo grupo,índice) é editada pela posição, sem mexer na outra."""
+    from charfactory.formats import sff
+    s = kfm.sprites
+    s.palettes.append(sff.Palette(3, 9, [(0, 0, 0), (40, 60, 220), (230, 190, 150), (128, 128, 128)]))
+    s.palettes.append(sff.Palette(3, 9, [(0, 0, 0), (40, 60, 220), (230, 190, 150), (128, 128, 128)]))
+    k = len(s.palettes) - 1
+    r = edit.recolor_family(kfm, (3, 9, k), "blue", "red")
+    cols = s.palettes[k].colors
+    assert r["changed"] == 1 and cols[1][0] > 150 and cols[1][2] < 100      # azul -> vermelho
+    assert cols[2] == (230, 190, 150) and cols[3] == (128, 128, 128)        # pele e cinza ficam
+    assert s.palettes[k - 1].colors[1] == (40, 60, 220)                     # a outra 3,9 não muda
+    edit.palette_effect(kfm, (3, 9, k), "swap_rb", [2, 3])
+    assert cols[2] == (150, 190, 230) and cols[0] == (0, 0, 0)
+    edit.palette_effect(kfm, (3, 9, k), "rotate_rgb", [3])
+    assert cols[3] == (128, 128, 128)
+    with pytest.raises(ValueError):
+        edit.palette_effect(kfm, 1, "blur")
+
+
 def test_gradient_endpoints(kfm):
     edit.palette_gradient(kfm, 1, 10, 20, "#000000", "#ffffff")
     p = kfm.sprites.palettes[kfm.sprites.find_palette(1, 1)].colors

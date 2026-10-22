@@ -249,141 +249,17 @@ class ThemeEditor(QDialog):
 
 # ======================================================================= sprite sheet
 
+from .sheetslicer import SheetDialog  # noqa: E402,F401  (a janela mora no próprio módulo)
 
-class SheetDialog(QDialog):
-    def __init__(self, ctx: AppContext, parent=None):
-        super().__init__(parent)
-        self.setWindowTitle(tr("Slice sprite sheet"))
-        self.resize(1000, 700)
-        self.ctx = ctx
-        self.result_data = None
-        self.path = QLineEdit()
-        browse = QPushButton(tr("Choose…"))
-        browse.clicked.connect(self.browse)
-        self.mode = QComboBox()
-        self.mode.addItem(tr("Automatic (connected pixels)"), "auto")
-        self.mode.addItem(tr("Fixed grid"), "grid")
-        self.group = QSpinBox(); self.group.setRange(0, 99999)
-        self.start = QSpinBox(); self.start.setRange(0, 99999)
-        self.bg = QLineEdit(); self.bg.setPlaceholderText(tr("auto (#rrggbb)"))
-        self.tol = QSpinBox(); self.tol.setRange(0, 255); self.tol.setValue(8)
-        self.merge = QSpinBox(); self.merge.setRange(0, 64); self.merge.setValue(4)
-        self.min_area = QSpinBox(); self.min_area.setRange(1, 100000); self.min_area.setValue(12)
-        self.axis = QComboBox()
-        for k, label in [("feet", tr("Feet + row floor")), ("bottom-center", tr("Bottom center")), ("center", tr("Center"))]:
-            self.axis.addItem(label, k)
-        self.per_row = QCheckBox(tr("One group per row"))
-        self.cw = QSpinBox(); self.cw.setRange(0, 4096); self.cw.setSpecialValueText("—")
-        self.ch = QSpinBox(); self.ch.setRange(0, 4096); self.ch.setSpecialValueText("—")
-        self.cols = QSpinBox(); self.cols.setRange(0, 256); self.cols.setSpecialValueText("—")
-        self.rows = QSpinBox(); self.rows.setRange(0, 256); self.rows.setSpecialValueText("—")
-        self.palette = QComboBox()
-        for k, label in [("character", tr("Convert to the character's palette")), ("main", tr("Use as the main palette (1,1)")),
-                         ("own", tr("Keep the sheet's own palette"))]:
-            self.palette.addItem(label, k)
-        self.action = QSpinBox(); self.action.setRange(-1, 99999999); self.action.setSpecialValueText(tr("don't create"))
-        self.action.setValue(-1)
-        self.ftime = QSpinBox(); self.ftime.setRange(1, 999); self.ftime.setValue(5)
 
-        f = QFormLayout()
-        row = QHBoxLayout(); row.addWidget(self.path, 1); row.addWidget(browse)
-        f.addRow(tr("Image"), row)
-        f.addRow(tr("Mode"), self.mode)
-        f.addRow(tr("Group / 1st number"), self._pair(self.group, self.start))
-        f.addRow(tr("Background color"), self.bg)
-        f.addRow(tr("Tolerance"), self.tol)
-        f.addRow(tr("Merge pieces up to (px)"), self.merge)
-        f.addRow(tr("Minimum area (px)"), self.min_area)
-        f.addRow(tr("Axis"), self.axis)
-        f.addRow("", self.per_row)
-        f.addRow(tr("Grid: cell W×H"), self._pair(self.cw, self.ch))
-        f.addRow(tr("Grid: columns×rows"), self._pair(self.cols, self.rows))
-        f.addRow(tr("Palette on import"), self.palette)
-        f.addRow(tr("Create animation no."), self.action)
-        f.addRow(tr("Time per frame"), self.ftime)
-        preview_btn = QPushButton(tr("Show preview"))
-        preview_btn.clicked.connect(self.run_preview)
-        import_btn = QPushButton(tr("Slice and import into the character"))
-        import_btn.clicked.connect(self.run_import)
-        import_btn.setDefault(True)
-        self.summary = QLabel()
-        self.summary.setObjectName("dim")
-        self.summary.setWordWrap(True)
-        left = QWidget()
-        lv = QVBoxLayout(left)
-        lv.addLayout(f)
-        lv.addWidget(preview_btn)
-        lv.addWidget(import_btn)
-        lv.addWidget(self.summary)
-        lv.addStretch()
-        self.preview = QLabel(tr("The preview shows up here"))
-        self.preview.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        sc = QScrollArea()
-        sc.setWidget(self.preview)
-        sc.setWidgetResizable(True)
-        lay = QHBoxLayout(self)
-        lay.addWidget(left, 2)
-        lay.addWidget(sc, 3)
-
-    @staticmethod
-    def _pair(a, b) -> QWidget:
-        w = QWidget()
-        h = QHBoxLayout(w)
-        h.setContentsMargins(0, 0, 0, 0)
-        h.setSpacing(6)
-        h.addWidget(a, 1)
-        h.addWidget(b)
-        return w
-
-    def browse(self) -> None:
-        p, _ = QFileDialog.getOpenFileName(self, tr("Sprite sheet"), "", tr("Images (*.png *.gif *.bmp *.pcx *.jpg)"))
-        if p:
-            self.path.setText(p)
-
-    def _run(self, out_dir: Path) -> dict:
-        from ..tools import sheet
-        grid = {}
-        if self.mode.currentData() == "grid":
-            grid = dict(cell_width=self.cw.value() or None, cell_height=self.ch.value() or None,
-                        columns=self.cols.value() or None, rows=self.rows.value() or None)
-        return sheet.slice_sheet(self.path.text(), out_dir, self.group.value(), self.start.value(),
-                                 self.mode.currentData(), self.bg.text().strip() or None, self.tol.value(),
-                                 None, self.merge.value(), self.min_area.value(), self.axis.currentData(),
-                                 256, self.per_row.isChecked(), **grid)
-
-    def _out_dir(self) -> Path:
-        base = Path(self.ctx.char.dir if self.ctx.char else Path.home()) / "_sheets"
-        return base / Path(self.path.text()).stem
-
-    def run_preview(self) -> dict | None:
-        if not self.path.text():
-            return None
-        try:
-            r = self._run(self._out_dir())
-        except Exception as e:  # noqa: BLE001
-            QMessageBox.warning(self, tr("Sprite sheet"), str(e))
-            return None
-        pix = QPixmap(r["preview"])
-        self.preview.setPixmap(pix)
-        self.summary.setText(tr("{0} sprites in {1} row(s) · background {2} · {3} colors ({4})").format(r['count'], r['rows'], r['background'], r['palette_colors'], tr("exact") if r['palette_exact'] else tr("reduced"))
-                             + ("\n⚠ " + "; ".join(r["warnings"]) if r["warnings"] else ""))
-        return r
-
-    def run_import(self) -> None:
-        if not self.ctx.char:
-            QMessageBox.information(self, tr("Sprite sheet"), tr("Open a character first."))
-            return
-        r = self.run_preview()
-        if not r:
-            return
-        act = self.action.value() if self.action.value() >= 0 else None
-        res = ops.import_sheet(self.ctx.char, r["csv"], self.palette.currentData(), act, self.ftime.value())
-        self.result_data = res
-        self.ctx.changed("sprites")
-        if act is not None:
-            self.ctx.changed("anims")
-        self.ctx.status.emit(tr("{0} sprites imported").format(res['imported']) + (tr("; animation {0} created").format(act) if act is not None else ""))
-        self.accept()
+def _pair(a, b) -> QWidget:
+    w = QWidget()
+    h = QHBoxLayout(w)
+    h.setContentsMargins(0, 0, 0, 0)
+    h.setSpacing(6)
+    h.addWidget(a, 1)
+    h.addWidget(b)
+    return w
 
 
 # ======================================================================= throw
@@ -423,7 +299,7 @@ class ThrowDialog(QDialog):
         self.p1.setToolTip(tr("Action of P1 throwing"))
         self.p2.setToolTip(tr("Action of P2 being thrown"))
         f.addRow(tr("Damage"), self.dmg)
-        f.addRow(tr("Release velocity (X, Y)"), SheetDialog._pair(self.vx, self.vy))
+        f.addRow(tr("Release velocity (X, Y)"), _pair(self.vx, self.vy))
         f.addRow(tr("Button"), self.button)
         bb = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
         bb.button(QDialogButtonBox.StandardButton.Ok).setText(tr("Generate and apply"))
@@ -811,16 +687,23 @@ class CommandPalette(QDialog):
 
     LIMIT = 80
 
-    def __init__(self, entries: list[tuple[str, str, object]], parent=None):
-        """entries: (texto, detalhe à direita — atalho ou tipo, função sem argumentos)."""
+    def __init__(self, entries: list[tuple[str, str, object]], parent=None, placeholder: str | None = None,
+                 score=None, tail=None, text: str = ""):
+        """entries: (texto, detalhe à direita — atalho ou tipo, função sem argumentos).
+        score(busca, texto, detalhe): pontuação (maior é melhor, None não casa); padrão, a
+        aproximada. tail(busca): itens que dependem do que foi digitado, no fim da lista (o
+        "procurar no texto" do Ctrl+F). text: a busca já preenchida."""
         super().__init__(parent, Qt.WindowType.Popup | Qt.WindowType.FramelessWindowHint)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
-        self.entries = entries
+        self.entries = list(entries)
+        self.base = len(self.entries)
+        self.score = score or (lambda q, label, detail: fuzzy_score(q, f"{label} {detail}"))
+        self.tail = tail
         from PySide6.QtWidgets import QFrame
         frame = QFrame()
         frame.setObjectName("palette")
         self.edit = QLineEdit()
-        self.edit.setPlaceholderText(tr("Type a command, or: anim 200, state 1000, sprite 9000, sound 5"))
+        self.edit.setPlaceholderText(placeholder or tr("Type a command, or: anim 200, state 1000, sprite 9000, sound 5"))
         self.list = QListWidget()
         self.list.setUniformItemSizes(True)
         self.list.itemActivated.connect(self.run)
@@ -842,16 +725,26 @@ class CommandPalette(QDialog):
         if parent is not None:
             g = parent.geometry()
             self.move(g.x() + (g.width() - self.width()) // 2, g.y() + 90)
-        self.refilter("")
+        if text:
+            self.edit.setText(text)
+            self.edit.selectAll()
+        else:
+            self.refilter("")
 
     def refilter(self, text: str) -> None:
         self.list.clear()
+        del self.entries[self.base:]
         scored = []
         for i, (label, detail, fn) in enumerate(self.entries):
-            sc = fuzzy_score(text, f"{label} {detail}")
+            sc = self.score(text, label, detail)
             if sc is not None:
                 scored.append((-sc, i))
-        for _, i in sorted(scored)[:self.LIMIT]:
+        shown = [i for _, i in sorted(scored)[:self.LIMIT]]
+        if self.tail is not None:
+            for e in self.tail(text):
+                self.entries.append(e)
+                shown.append(len(self.entries) - 1)
+        for i in shown:
             label, detail, fn = self.entries[i]
             it = QListWidgetItem()
             it.setData(Qt.ItemDataRole.UserRole, i)
@@ -944,19 +837,27 @@ class UnusedDialog(QDialog):
         from .icons import icon
         self.tree.clear()
         r = usage.unused_resources(self.ctx.char)
+        maybe = [(tr("Action {0}").format(n), ("anim", n, 0)) for n in r["maybe_animations"]] + \
+                [(tr("Sound {0},{1}").format(g, n), ("sound", g, n)) for g, n in r["maybe_sounds"]]
         groups = [("sprites", tr("Sprites"), "sprites", [(f"{g},{i}", ("sprite", g, i)) for g, i in r["sprites"]]),
                   ("animations", tr("Animations"), "anims", [(tr("Action {0}").format(n), ("anim", n, 0)) for n in r["animations"]]),
-                  ("sounds", tr("Sounds"), "sounds", [(f"{g},{n}", ("sound", g, n)) for g, n in r["sounds"]])]
-        for _, title, ic, items in groups:
+                  ("sounds", tr("Sounds"), "sounds", [(f"{g},{n}", ("sound", g, n)) for g, n in r["sounds"]]),
+                  ("maybe", tr("Maybe used (computed reference)"), "warning", maybe)]
+        for key, title, ic, items in groups:
+            if key == "maybe" and not items:
+                continue
             top = self._item_cls([f"{title}  ·  {len(items)}"])
             top.setIcon(0, icon(ic, toggles=False))
             top.setFlags(top.flags() & ~Qt.ItemFlag.ItemIsSelectable)
+            if key == "maybe":
+                top.setToolTip(0, tr("A state picks these with an expression (e.g. 200 + var(1)); "
+                                     "open them and check before deleting."))
             for text, data in items:
                 child = self._item_cls([text])
                 child.setData(0, Qt.ItemDataRole.UserRole, data)
                 top.addChild(child)
             self.tree.addTopLevelItem(top)
-            top.setExpanded(len(items) <= 40)
+            top.setExpanded(len(items) <= 40 and key != "maybe")
         total = len(r["sprites"]) + len(r["animations"]) + len(r["sounds"])
         head = (tr("No unreferenced resources.") if total == 0 else
                 tr("1 unreferenced resource.") if total == 1 else tr("{0} unreferenced resources.").format(total))
@@ -1030,7 +931,7 @@ class NewCharacterDialog(QDialog):
         f.setVerticalSpacing(10)
         f.addRow(tr("Name"), self.name)
         f.addRow(tr("Author"), self.author)
-        f.addRow(tr("Folder"), SheetDialog._pair(self.folder, browse))
+        f.addRow(tr("Folder"), _pair(self.folder, browse))
         f.addRow(tr("Template"), self.template)
         hint = QLabel(tr("The folder is created with .def, .sff, .air, .cns and .cmd. A template copies another character's files."))
         hint.setObjectName("hint")
@@ -1142,12 +1043,12 @@ class SettingsDialog(QDialog):
         lay.addWidget(group(tr("Interface"), [
             (tr("Language"), self.language), tr("The new language is used when the program opens again.")]))
         lay.addWidget(group(tr("Folders and programs"), [
-            (tr("MUGEN"), SheetDialog._pair(self.mugen, b)),
-            ("Ikemen GO", SheetDialog._pair(self.ikemen, b5)),
-            (tr("Presets"), SheetDialog._pair(self.presets, b2)),
+            (tr("MUGEN"), _pair(self.mugen, b)),
+            ("Ikemen GO", _pair(self.ikemen, b5)),
+            (tr("Presets"), _pair(self.presets, b2)),
             tr("Optional: PalFX presets (common/engines/mugen/palFX) and colorsets (common/colorsets) come from there."),
-            (tr("Image editor"), SheetDialog._pair(self.image_editor, b3)),
-            ("ffmpeg", SheetDialog._pair(self.ffmpeg, b4))]))
+            (tr("Image editor"), _pair(self.image_editor, b3)),
+            ("ffmpeg", _pair(self.ffmpeg, b4))]))
         lay.addWidget(group(tr("Run in the engine (Ctrl+R)"), [
             (tr("Engine"), self.engine),
             tr("Automatic: the engine of the folder the character is in; outside one, ZSS characters run in Ikemen GO and the others in MUGEN. Debug › Run in MUGEN / Run in Ikemen GO pick one for a single run."),
