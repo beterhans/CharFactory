@@ -7,6 +7,23 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-10-24
+
+### Added
+
+- **macOS support**: the app builds as a `.app` bundle (icon, bundle id `com.charfactory.app`)
+  and the release workflow builds and zips it alongside the Windows executable. Settings live in
+  `~/Library/Application Support/charfactory` (`APPDATA` still overrides, as the tests use).
+- Run characters in Ikemen GO on macOS: the engine is an `.app` bundle, so Options › Folders and
+  programs lets you pick it (on macOS the button opens an app picker, since the folder dialog
+  greys out `.app` bundles). Without a choice it picks the bundle for your architecture;
+  downloaded bundles get their quarantine cleared, like the official launcher does.
+- ffmpeg: when it is not in the PATH (as in a frozen app), Homebrew locations are tried
+  (`/opt/homebrew/bin`, `/usr/local/bin`). The program pickers now also match extension-less
+  programs and `.app` bundles.
+- Sound playback on macOS (Sounds tab and simulator) through the system `afplay`; Windows keeps
+  using `winsound`.
+
 ## [0.3.0] - 2026-10-21
 
 ### Added
@@ -215,7 +232,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   tick-by-tick move simulator, stage editor, tools and the `charfactory` command line.
 - Interface in English, Spanish and Brazilian Portuguese.
 
-[Unreleased]: https://github.com/eduardovbe/CharFactory/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/eduardovbe/CharFactory/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/eduardovbe/CharFactory/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/eduardovbe/CharFactory/compare/v0.2.5...v0.3.0
 [0.2.5]: https://github.com/eduardovbe/CharFactory/compare/v0.2.0...v0.2.5
 [0.2.0]: https://github.com/eduardovbe/CharFactory/compare/v0.1.0...v0.2.0
