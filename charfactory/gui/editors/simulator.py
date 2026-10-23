@@ -323,8 +323,8 @@ class MoveTimeline(QWidget):
 
 
 class SoundPlayer:
-    """Toca a trilha do golpe (os sons mixados em um WAV) a partir de um tick. O winsound toca
-    um arquivo por vez; dois arquivos alternados evitam regravar o que ainda está tocando."""
+    """Toca a trilha do golpe (os sons mixados em um WAV) a partir de um tick. Toca um
+    arquivo por vez; dois arquivos alternados evitam regravar o que ainda está tocando."""
 
     def __init__(self):
         self._n = 0
@@ -333,7 +333,7 @@ class SoundPlayer:
     def play(self, sim, start_tick: int) -> None:
         self.stop()
         try:
-            import winsound
+            from .. import audio
             from ...tools import simulate
             wav = simulate.sound_track(sim, start_tick)
             if not wav:
@@ -342,7 +342,7 @@ class SoundPlayer:
             path = os.path.join(tempfile.gettempdir(), f"charfactory_sim_{os.getpid()}_{self._n}.wav")
             with open(path, "wb") as fh:
                 fh.write(wav)
-            winsound.PlaySound(path, winsound.SND_FILENAME | winsound.SND_ASYNC | winsound.SND_NODEFAULT)
+            audio.player.play(path)
             self.playing = True
         except (ImportError, OSError, RuntimeError):
             pass
@@ -351,11 +351,8 @@ class SoundPlayer:
         if not self.playing:
             return
         self.playing = False
-        try:
-            import winsound
-            winsound.PlaySound(None, 0)
-        except ImportError:
-            pass
+        from .. import audio
+        audio.player.stop()
 
 
 class TickView(QLabel):

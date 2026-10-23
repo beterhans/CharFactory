@@ -428,25 +428,21 @@ class SoundEditor(QWidget):
 
     def play(self, loop: bool = False) -> None:
         try:
-            import winsound
+            from .. import audio
             s = self.sound()
             a, b = sorted(self.wave.sel)
             wav = edit.samples_wav(self.char, s.group, s.number, a, b) if s and b > a else None
             if self._write_tmp(wav):
-                flags = winsound.SND_FILENAME | winsound.SND_ASYNC | (winsound.SND_LOOP if loop else 0)
-                winsound.PlaySound(self._tmp, flags)
-        except (ImportError, RuntimeError, ValueError) as e:
+                audio.player.play(self._tmp, loop=loop)
+        except (ImportError, RuntimeError, ValueError, OSError) as e:
             self.ctx.status.emit(tr("Could not play: {0}").format(e))
 
     def play_loop(self) -> None:
         self.play(loop=True)
 
     def stop(self) -> None:
-        try:
-            import winsound
-            winsound.PlaySound(None, 0)
-        except ImportError:
-            pass
+        from .. import audio
+        audio.player.stop()
 
     # ------------------------------------------------------------ edição
 

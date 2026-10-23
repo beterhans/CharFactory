@@ -71,8 +71,9 @@ pull request.
 .venv\Scripts\python tools/build_exe.py
 ```
 
-The output goes to `dist/Char Factory/`. Releases are built by the `release` workflow when a
-`v*` tag is pushed.
+The output goes to `dist/Char Factory/` on Windows and `dist/Char Factory.app` on macOS (unsigned:
+on first launch, right-click the app and choose Open). Releases are built by the `release`
+workflow when a `v*` tag is pushed.
 
 ## Updating the screenshots
 

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import os
 import subprocess
+import sys
 import tempfile
 from pathlib import Path
 
@@ -1013,8 +1014,12 @@ class SpriteEditor(QWidget):
         try:
             if exe:
                 subprocess.Popen([exe, key])
-            else:
+            elif sys.platform == "win32":
                 os.startfile(key)  # noqa: S606 — programa padrão do Windows para PNG
+            elif sys.platform == "darwin":
+                subprocess.Popen(["open", key])
+            else:
+                subprocess.Popen(["xdg-open", key])
         except (OSError, AttributeError) as e:
             QMessageBox.warning(self, tr("External editor"), tr("Could not open {0}: {1}").format(key, e))
             return

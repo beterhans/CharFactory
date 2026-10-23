@@ -1,4 +1,5 @@
-# On a v* tag (e.g. v1.0.0), builds Char Factory.exe and attaches the zip to the Release.
+# On a v* tag (e.g. v1.0.0), builds the Windows executable and the macOS app bundle and
+# attaches both zips to the Release.
 name: release
 
 on:
@@ -30,3 +31,23 @@ jobs:
         with:
           files: Char-Factory-${{ github.ref_name }}-windows.zip
           generate_release_notes: true
+
+  macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install ".[gui]" pyinstaller
+      - name: Build the app bundle
+        run: python tools/build_exe.py
+      - name: Zip
+        run: ditto -c -k --sequesterRsrc "dist/Char Factory.app" "Char-Factory-${{ github.ref_name }}-macos.zip"
+      - name: Publish to the Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: Char-Factory-${{ github.ref_name }}-macos.zip

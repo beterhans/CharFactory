@@ -1,5 +1,7 @@
 """Rodar no motor: MUGEN ou Ikemen GO, a pasta escolhida e o log de cada um (sem abrir o motor)."""
 import os
+import platform
+import sys
 import time
 
 import pytest
@@ -13,6 +15,17 @@ def _engine(root, exe):
     (root / "data").mkdir()
     (root / exe).write_bytes(b"")
     return root
+
+
+def _app(root, name="I.K.E.M.E.N-Go_arm.app", exe_name="Ikemen_GO_MacOSARM"):
+    """Bundle .app falso do Ikemen GO (o layout que o launcher oficial usa no macOS)."""
+    macos = root / name / "Contents" / "MacOS"
+    macos.mkdir(parents=True)
+    exe = macos / exe_name
+    exe.write_bytes(b"")
+    os.chmod(exe, 0o755)
+    (macos / "bundle_run.sh").write_text("#!/bin/sh\n", "utf-8")
+    return root / name
 
 
 def _char(root, name="Teste", zss=False):
@@ -104,3 +117,49 @@ def test_warns_about_a_motif_that_does_not_exist(tmp_path):
     (ikemen / "data" / "ikemen1" / "system.def").write_text("", "utf-8")
     assert runner.config_problem(ikemen, "ikemen") is None
     assert runner.config_problem(ikemen, "mugen") is None
+
+
+def test_an_ikemen_app_bundle_marks_the_folder(tmp_path):
+    root = tmp_path / "ikemen"
+    (root / "chars").mkdir(parents=True)
+    _app(root, "I.K.E.M.E.N-Go.app")          # só o bundle: sem .exe e sem main.lua
+    assert runner.is_ikemen(root)
+
+
+@pytest.mark.skipif(sys.platform != "darwin", reason="bundle .app é do macOS")
+def test_finds_the_executable_inside_an_ikemen_app_bundle(tmp_path):
+    root = _engine(tmp_path / "ikemen", "Ikemen_GO.exe")   # a pasta tem o .exe e os bundles
+    arm = _app(root, "I.K.E.M.E.N-Go_arm.app", "Ikemen_GO_MacOSARM")
+    intel = _app(root, "I.K.E.M.E.N-Go_Intel.app", "Ikemen_GO_MacOS")
+    if platform.machine() == "arm64":
+        want = arm / "Contents" / "MacOS" / "Ikemen_GO_MacOSARM"
+    else:
+        want = intel / "Contents" / "MacOS" / "Ikemen_GO_MacOS"
+    assert runner.find_ikemen_exe(root) == want      # o .app ganha do .exe no macOS
+    assert runner.engine_exe(root) == (want, "ikemen")
+    # escolhido nas Opções: não adivinha pela arquitetura, usa o bundle pedido
+    assert runner.find_ikemen_exe(root, intel) == intel / "Contents" / "MacOS" / "Ikemen_GO_MacOS"
+    assert runner.engine_exe(root, intel) == (intel / "Contents" / "MacOS" / "Ikemen_GO_MacOS", "ikemen")
+
+
+def test_pointing_at_the_app_bundle_uses_the_folder_that_contains_it(tmp_path):
+    root = _engine(tmp_path / "ikemen", "Ikemen_GO.exe")
+    app = _app(root)
+    c = _char(root)
+    assert runner.engine_root(c, "ikemen", None, app) == (root, "ikemen")
+    assert runner.char_argument(c, root) == "Teste/Teste.def"
+
+
+def test_chosen_app_only_applies_to_its_own_folder(tmp_path):
+    root = _engine(tmp_path / "ikemen", "Ikemen_GO.exe")
+    app = _app(root)
+    assert runner.chosen_app(root, app) == app
+    assert runner.chosen_app(tmp_path / "outro", app) is None   # outra pasta: não vale
+    assert runner.chosen_app(root, root) is None                # pasta comum não é bundle
+    assert runner.chosen_app(None, app) is None
+
+
+def test_prepare_engine_is_a_noop_without_quarantine(tmp_path):
+    root = _engine(tmp_path / "ikemen", "Ikemen_GO.exe")
+    app = _app(root)
+    runner.prepare_engine(app / "Contents" / "MacOS" / "Ikemen_GO_MacOSARM")   # não quebra

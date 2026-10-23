@@ -1,5 +1,5 @@
-"""Gera o ícone do Char Factory (charfactory/gui/assets/charfactory.png e charfactory.ico) a partir da
-arte em tools/icon-source.png (a fábrica verde sobre fundo escuro).
+"""Gera o ícone do Char Factory (charfactory/gui/assets/charfactory.png, charfactory.ico e
+charfactory.icns) a partir da arte em tools/icon-source.png (a fábrica verde sobre fundo escuro).
 
 A arte vem com muita margem: o desenho é recortado pelo verde, centralizado com folga e
 posto numa placa arredondada da cor do fundo, para preencher o ícone até em 16 px.
@@ -8,6 +8,8 @@ posto numa placa arredondada da cor do fundo, para preencher o ícone até em 16
 """
 from __future__ import annotations
 
+import io
+import struct
 import sys
 from pathlib import Path
 
@@ -47,6 +49,18 @@ def plate(art: Image.Image, size: int) -> Image.Image:
     return img.resize((size, size), Image.Resampling.LANCZOS)
 
 
+def icns_bytes(imgs: dict[int, Image.Image]) -> bytes:
+    """Container .icns com as imagens PNG (tipos ic04/ic08/ic07/ic10/ic09)."""
+    entries = []
+    for size, tipo in ((16, b"ic04"), (32, b"ic08"), (128, b"ic07"), (256, b"ic10"), (512, b"ic09")):
+        buf = io.BytesIO()
+        imgs[size].save(buf, "PNG")
+        data = buf.getvalue()
+        entries.append(tipo + struct.pack(">I", len(data) + 8) + data)
+    body = b"".join(entries)
+    return b"icns" + struct.pack(">I", len(body) + 8) + body
+
+
 def main() -> int:
     if not SOURCE.exists():
         print(f"falta a arte: {SOURCE}")
@@ -56,6 +70,7 @@ def main() -> int:
     sizes = [16, 24, 32, 48, 64, 128, 256]
     imgs = [plate(art, n) for n in sizes]
     imgs[-1].save(ASSETS / "charfactory.ico", sizes=[(n, n) for n in sizes], append_images=imgs[:-1])
+    (ASSETS / "charfactory.icns").write_bytes(icns_bytes({n: plate(art, n) for n in (16, 32, 128, 256, 512)}))
     print("icon saved to", ASSETS)
     return 0
 

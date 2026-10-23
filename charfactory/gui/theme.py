@@ -4,16 +4,16 @@ Um tema tem duas camadas:
 - colorset: as 20 cores do canvas e do realce de código (colorsets .xml com esses nomes
   podem ser importados diretamente);
 - ui: cores-base da interface, das quais a folha de estilo (QSS) é gerada.
-Temas embutidos ficam em charfactory/gui/themes/*.json; os do usuário em %APPDATA%/charfactory/themes.
+Temas embutidos ficam em charfactory/gui/themes/*.json; os do usuário na pasta de
+configurações (i18n.config_dir()/themes).
 """
 from __future__ import annotations
 
 import json
-import os
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
 from pathlib import Path
-from ..i18n import tr
+from ..i18n import config_dir, tr
 
 BUILTIN_DIR = Path(__file__).parent / "themes"
 DEFAULT_THEME, DEFAULT_FILE = "Default", "default"
@@ -22,7 +22,7 @@ OLD_NAMES = {"Escuro": "Dark", "Claro": "Light", "Meia-noite": "Midnight", "Esme
 
 
 def user_dir() -> Path:
-    base = Path(os.environ.get("APPDATA", Path.home())) / "charfactory" / "themes"
+    base = config_dir() / "themes"
     base.mkdir(parents=True, exist_ok=True)
     return base
 

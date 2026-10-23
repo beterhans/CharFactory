@@ -15,6 +15,7 @@ from __future__ import annotations
 import json
 import locale
 import os
+import sys
 from pathlib import Path
 
 LANGUAGES = {"en": "English", "pt_BR": "Português (Brasil)", "es": "Español"}
@@ -24,8 +25,19 @@ _current = "en"
 _catalog: dict[str, str] = {}
 
 
+def config_dir() -> Path:
+    """Pasta de configurações do usuário (config.json, temas): %APPDATA%/charfactory no
+    Windows, ~/Library/Application Support/charfactory no macOS e ~/charfactory nos demais.
+    A variável APPDATA vale em qualquer sistema (os testes a usam para isolar as configurações)."""
+    if os.environ.get("APPDATA"):
+        return Path(os.environ["APPDATA"]) / "charfactory"
+    if sys.platform == "darwin":
+        return Path.home() / "Library" / "Application Support" / "charfactory"
+    return Path.home() / "charfactory"
+
+
 def settings_path() -> Path:
-    return Path(os.environ.get("APPDATA", Path.home())) / "charfactory" / "config.json"
+    return config_dir() / "config.json"
 
 
 def saved_language() -> str | None:

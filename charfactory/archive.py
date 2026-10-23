@@ -4,8 +4,9 @@ O arquivo é extraído para
 uma pasta (por padrão `chars/<nome>` do MUGEN) e aberto como um projeto normal; `pack`
 faz o caminho inverso para distribuir o personagem.
 
-ZIP usa a biblioteca padrão. RAR e 7z usam o 7-Zip, se instalado, ou o `tar.exe` do Windows
-(libarchive). Entradas com caminho absoluto ou `..` são recusadas antes de extrair.
+ZIP usa a biblioteca padrão. RAR e 7z usam o 7-Zip, se instalado, ou um tar baseado em
+libarchive (o `tar.exe` do Windows 10+, o bsdtar do macOS). Entradas com caminho absoluto ou
+`..` são recusadas antes de extrair.
 """
 from __future__ import annotations
 
@@ -31,8 +32,11 @@ def _seven_zip() -> str | None:
 
 
 def _system_tar() -> str | None:
-    p = Path(os.environ.get("SystemRoot", r"C:\Windows")) / "System32" / "tar.exe"
-    return str(p) if p.exists() else None
+    if os.name == "nt":
+        p = Path(os.environ.get("SystemRoot", r"C:\Windows")) / "System32" / "tar.exe"
+        return str(p) if p.exists() else None
+    # macOS traz o bsdtar (libarchive), que lê 7z e zip; em Linux, qualquer tar no PATH
+    return shutil.which("tar")
 
 
 def _safe_name(name: str) -> bool:
@@ -70,7 +74,7 @@ def list_entries(archive: str | Path) -> list[str]:
         if out.returncode:
             raise ProjectError(tr("tar could not read {0}: {1}").format(archive.name, out.stderr.strip()[:300]))
         return [n for n in out.stdout.splitlines() if n and not n.endswith("/")]
-    raise ProjectError(tr("to open {0}, install 7-Zip (or use Windows 10+ tar.exe)").format(archive.suffix))
+    raise ProjectError(tr("to open {0}, install 7-Zip (or a libarchive-based tar)").format(archive.suffix))
 
 
 def _extract_all(archive: Path, dest: Path) -> None:

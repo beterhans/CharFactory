@@ -10,6 +10,7 @@ from __future__ import annotations
 import copy
 import io
 import wave
+from pathlib import Path
 
 import numpy as np
 from PIL import Image
@@ -785,6 +786,11 @@ def audio_to_wav(path: str, ffmpeg: str | None = None) -> bytes:
     import shutil
     import subprocess
     exe = ffmpeg or shutil.which("ffmpeg")
+    if not exe:      # app congelado não tem o Homebrew no PATH (macOS)
+        for cand in ("/opt/homebrew/bin/ffmpeg", "/usr/local/bin/ffmpeg"):
+            if Path(cand).exists():
+                exe = cand
+                break
     if not exe:
         raise FileNotFoundError(tr("ffmpeg not found: set its path in Tools › Options"))
     r = subprocess.run([exe, "-v", "error", "-i", str(path), "-acodec", "pcm_s16le", "-f", "wav", "-"],

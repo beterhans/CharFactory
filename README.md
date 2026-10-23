@@ -17,7 +17,7 @@
 </p>
 
 <p align="center">
-  <b><a href="../../releases/latest">Download for Windows</a></b> ·
+  <b><a href="../../releases/latest">Download (Windows · macOS)</a></b> ·
   <a href="#ai-agents-and-mcp">AI and MCP</a> ·
   <a href="#what-makes-it-different">What makes it different</a> ·
   <a href="#the-editors">The editors</a> ·
@@ -29,8 +29,10 @@
 
 ## Get started
 
-1. Download `Char-Factory-...-windows.zip` from the **[latest release](../../releases/latest)**.
-2. Extract it anywhere and open **`Char Factory.exe`**. Nothing to install.
+1. Download `Char-Factory-...-windows.zip` (or `-macos.zip`) from the **[latest release](../../releases/latest)**.
+2. Extract it anywhere and open **`Char Factory.exe`** (Windows) or **`Char Factory.app`** (macOS).
+   Nothing to install. On macOS the app is unsigned: on first launch, right-click it and choose
+   **Open** to get past Gatekeeper.
 3. Open a character's `.def`, or drop a `.def`, `.zip`, `.rar` or `.7z` on the window.
 
 The first launch asks for the language and the theme. If the character lives inside your MUGEN or
@@ -153,9 +155,10 @@ client speaks Streamable HTTP to `http://127.0.0.1:47913/mcp` with the header
    loads the models into the list. Claude defaults to `claude-opus-5-5`.
 4. Open the panel with <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>A</kbd> and ask.
 
-The key is stored in the Windows Credential Manager, never in the settings file. Without a saved
-key, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY` or `GEMINI_API_KEY` is used. With Claude, the assistant
-caches the prompt and thinks adaptively, so long editing sessions stay fast and cheap.
+The key is stored in the system credential manager (Windows Credential Manager on Windows; elsewhere
+for this session only), never in the settings file. Without a saved key, `ANTHROPIC_API_KEY`,
+`OPENAI_API_KEY` or `GEMINI_API_KEY` is used. With Claude, the assistant caches the prompt and
+thinks adaptively, so long editing sessions stay fast and cheap.
 
 </details>
 
@@ -319,12 +322,12 @@ charfactory --help                        # every command
 
 Needs Python 3.11 or newer.
 
-```powershell
+```bash
 git clone https://github.com/eduardovbe/CharFactory.git
 cd CharFactory
 python -m venv .venv
-.venv\Scripts\pip install -e ".[gui,test]"
-.venv\Scripts\charfactory-gui
+.venv/bin/pip install -e ".[gui,test]"        # on Windows: .venv\Scripts\pip
+.venv/bin/charfactory-gui                     # on Windows: .venv\Scripts\charfactory-gui
 ```
 
 Tests, translations, building the executable and regenerating these screenshots are covered in

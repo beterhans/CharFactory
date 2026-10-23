@@ -1517,11 +1517,12 @@ class MainWindow(QMainWindow):
             self.save()
         from ..tools import charkit
         try:
-            exe, engine = runner.engine_exe(root or "")
+            exe, engine = runner.engine_exe(root or "", runner.chosen_app(root, s.get("ikemen_dir") or None))
         except (FileNotFoundError, OSError):
             QMessageBox.information(self, title, tr("Set the Ikemen GO folder in Tools › Options.") if engine == "ikemen"
                                     else tr("Set the MUGEN folder in Tools › Options."))
             return
+        runner.prepare_engine(exe)
         title = runner.ENGINE_NAMES[engine]
         try:
             arg = runner.char_argument(c, root, engine)

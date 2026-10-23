@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import copy
 import json
+import sys
 from pathlib import Path
 
 from PySide6.QtCore import QPointF, QRectF, QSize, Qt, Signal
@@ -961,9 +962,18 @@ class SettingsDialog(QDialog):
         b = QPushButton("…")
         b.clicked.connect(lambda: self.mugen.setText(QFileDialog.getExistingDirectory(self, tr("MUGEN folder")) or self.mugen.text()))
         self.ikemen = QLineEdit(ctx.settings.get("ikemen_dir", ""))
-        self.ikemen.setPlaceholderText(tr("folder with Ikemen_GO.exe"))
+        self.ikemen.setPlaceholderText(tr("folder with Ikemen_GO.exe (or the .app on macOS)"))
         b5 = QPushButton("…")
-        b5.clicked.connect(lambda: self.ikemen.setText(QFileDialog.getExistingDirectory(self, tr("Ikemen GO folder")) or self.ikemen.text()))
+
+        def pick_ikemen():
+            # no macOS o motor é um bundle .app, que a caixa de pastas não deixa escolher
+            if sys.platform == "darwin":
+                p = QFileDialog.getOpenFileName(self, tr("Ikemen GO app"), "", tr("App (*.app)"))[0]
+            else:
+                p = QFileDialog.getExistingDirectory(self, tr("Ikemen GO folder"))
+            self.ikemen.setText(p or self.ikemen.text())
+
+        b5.clicked.connect(pick_ikemen)
         self.presets = QLineEdit(ctx.settings.get("presets_dir", ""))
         b2 = QPushButton("…")
         b2.clicked.connect(lambda: self.presets.setText(QFileDialog.getExistingDirectory(self, tr("Presets folder")) or self.presets.text()))
@@ -993,12 +1003,12 @@ class SettingsDialog(QDialog):
         self.ffmpeg.setPlaceholderText(tr("empty = search the PATH (to import OGG/MP3/FLAC)"))
         b4 = QPushButton("…")
         b4.clicked.connect(lambda: self.ffmpeg.setText(
-            QFileDialog.getOpenFileName(self, "ffmpeg", "", tr("Program (*.exe)"))[0] or self.ffmpeg.text()))
+            QFileDialog.getOpenFileName(self, "ffmpeg", "", tr("Programs (*.exe *.app ffmpeg)"))[0] or self.ffmpeg.text()))
         self.image_editor = QLineEdit(s.get("image_editor", ""))
         self.image_editor.setPlaceholderText(tr("Aseprite.exe… (empty = default program for PNG)"))
         b3 = QPushButton("…")
         b3.clicked.connect(lambda: self.image_editor.setText(
-            QFileDialog.getOpenFileName(self, tr("Image editor"), "", tr("Program (*.exe)"))[0] or self.image_editor.text()))
+            QFileDialog.getOpenFileName(self, tr("Image editor"), "", tr("Programs (*.exe *.app ffmpeg)"))[0] or self.image_editor.text()))
         self.undo_limit = QSpinBox()
         self.undo_limit.setRange(5, 500)
         self.undo_limit.setValue(int(s.get("undo_limit", 100)))

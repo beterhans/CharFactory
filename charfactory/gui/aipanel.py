@@ -895,8 +895,9 @@ class AISettingsDialog(QDialog):
         form.addRow(tr("Model"), model_box)
         form.addRow(tr("Base URL"), self.base)
         form.addRow(hint_label(tr(
-            "The key is stored in the Windows Credential Manager, never in the settings file. Without a "
-            "saved key, the provider's environment variable is used (ANTHROPIC_API_KEY, OPENAI_API_KEY, "
+            "The key is stored in the system credential manager (Windows Credential Manager on Windows; "
+            "elsewhere it lasts for this session only), never in the settings file. Without a saved key, "
+            "the provider's environment variable is used (ANTHROPIC_API_KEY, OPENAI_API_KEY, "
             "GEMINI_API_KEY). For local models, choose OpenAI-compatible and point the base URL to Ollama "
             "or LM Studio.\n\nTo use a Claude, ChatGPT or Gemini subscription instead of an API key, "
             "connect that app to Char Factory in the Connect agents tab.")))
