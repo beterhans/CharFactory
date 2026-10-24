@@ -44,7 +44,7 @@ def main() -> int:
     for m in EXCLUDE:
         args += ["--exclude-module", m]
     PyInstaller.__main__.run(args)
-    out = dist / (f"{NAME}.app" if IS_MAC else NAME / f"{NAME}.exe")
+    out = dist / (f"{NAME}.app" if IS_MAC else f"{NAME}/{NAME}.exe")
     print("executable:", out if out.exists() else "not built")
     return 0 if out.exists() else 1
 
